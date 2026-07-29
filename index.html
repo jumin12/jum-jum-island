@@ -1,0 +1,2703 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#1ebfc1">
+  <title>Sarabel Island</title>
+  <style>
+    :root {
+      --ocean: #1ebfc1;
+      --deep: #126d79;
+      --cream: #fff8df;
+      --coral: #f47d63;
+      --mango: #ffc84a;
+      --mint: #7bdc9a;
+      --ink: #59392d;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background:
+        radial-gradient(circle at 50% 15%, #78e7e0 0 15%, transparent 42%),
+        linear-gradient(#1ebfc1, #0d7e91);
+      font-family: "Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #shell {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: max(0px, env(safe-area-inset-top)) max(0px, env(safe-area-inset-right))
+               max(0px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left));
+    }
+    canvas {
+      display: block;
+      width: min(100vw, calc(100vh * 0.5625));
+      height: min(100vh, calc(100vw * 1.7777778));
+      max-width: 100%;
+      max-height: 100%;
+      background: #1caeb8;
+      box-shadow: 0 0 44px rgba(4, 54, 65, .35);
+      touch-action: none;
+    }
+    #rotate {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      place-items: center;
+      padding: 28px;
+      color: var(--cream);
+      background: linear-gradient(145deg, #16aeb4, #0d7589);
+      text-align: center;
+      font-weight: 900;
+      font-size: 22px;
+      text-shadow: 0 2px 0 #375a58;
+    }
+    @media (orientation: landscape) and (max-height: 560px) {
+      #rotate { display: grid; }
+    }
+  </style>
+</head>
+<body>
+  <div id="shell"><canvas id="game" width="720" height="1280" aria-label="Sarabel Island game"></canvas></div>
+  <div id="rotate">Turn your island upright to keep serving.</div>
+  <script>
+  "use strict";
+
+  const W = 720, H = 1280, TAU = Math.PI * 2;
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  const ASSET_PATHS = {
+    mapSunny: "art/island-sunny-v3.png",
+    mapCoral: "art/island-coral-v3.png",
+    mapMoon: "art/island-moon-v3.png",
+    mapJungle: "art/island-jungle-v3.png",
+    mapPearl: "art/island-pearl-v3.png",
+    mapJamaican: "art/island-jamaican-v3.png",
+    table: "art/table-bg.png",
+    items: "art/items.png",
+    observatoryItems: "art/observatory-items.png",
+    buildings: "art/buildings.png",
+    observatoryBuildings: "art/observatory-buildings.png",
+    people: "art/people.png",
+    animatedPeople: "art/people-animated-v3.png",
+    themes: "art/themes.png",
+    jamaicanTheme: "art/jamaican-theme.png",
+    seagullFlight: "art/seagull-flight.png",
+    ui: "art/ui.png"
+  };
+  const SOUND_PATHS = {
+    slide: "sounds/slide.wav",
+    land: "sounds/land.wav",
+    merge: "sounds/merge.wav",
+    chain: "sounds/chain.wav",
+    serve: "sounds/serve.wav",
+    coin: "sounds/coin.wav",
+    upgrade: "sounds/upgrade.wav",
+    ocean: "sounds/ocean.wav"
+  };
+  const images = {};
+  const sounds = {};
+
+  const STATIONS = [
+    {
+      name: "Beach Juice Shack",
+      short: "JUICE",
+      icon: "SUNSHINE STREAK",
+      unlock: 0,
+      color: "#ff9f43",
+      dark: "#b75722",
+      rule: "Drag to any spot and flick upward. Matching drinks merge wherever they physically touch.",
+      flavor: "Fresh fruit, sea breeze, and the island's first smiling guests."
+    },
+    {
+      name: "Boardwalk Café",
+      short: "CAFÉ",
+      icon: "RECIPE PAIRS",
+      unlock: 4,
+      color: "#ef7767",
+      dark: "#9f413f",
+      rule: "Café tickets ask for two dishes. Build both patterns before the guest collects.",
+      flavor: "Warm plates and bakery trays bring the boardwalk back to life."
+    },
+    {
+      name: "Tropical Garden",
+      short: "GARDEN",
+      icon: "TRADE WINDS",
+      unlock: 12,
+      color: "#55bd78",
+      dark: "#27794a",
+      rule: "The wind bends every fifth slide sideways. Read the gust before choosing your launch point.",
+      flavor: "Restore rare flowers and turn forgotten terraces into color."
+    },
+    {
+      name: "Marina Supply",
+      short: "MARINA",
+      icon: "TIDAL TURN",
+      unlock: 24,
+      color: "#3eb1d0",
+      dark: "#246a8b",
+      rule: "Every fourth slide sends a sideways tide through the loose pile. Plan for the push.",
+      flavor: "Repair the dock, outfit explorers, and welcome the ferry."
+    },
+    {
+      name: "Boutique Hotel",
+      short: "HOTEL",
+      icon: "VIP SERVICE",
+      unlock: 40,
+      color: "#d88fc5",
+      dark: "#84486f",
+      rule: "VIP guests request two different comforts. Serve both before their stay begins.",
+      flavor: "Turn worn rooms into a bright island landmark."
+    },
+    {
+      name: "Hidden Lagoon",
+      short: "LAGOON",
+      icon: "BUBBLE SHELLS",
+      unlock: 60,
+      color: "#6f8ee8",
+      dark: "#3e519e",
+      rule: "Some treasures arrive in bubbles. Match once to pop, then match again to merge.",
+      flavor: "Uncover the island's oldest secret beyond the waterfall."
+    },
+    {
+      name: "Starlight Observatory",
+      short: "STARS",
+      icon: "CONSTELLATION LINK",
+      unlock: 100,
+      color: "#7775e8",
+      dark: "#3e3b8f",
+      rule: "Every third merge completes a constellation and boosts the new discovery one extra tier.",
+      flavor: "Rebuild the clifftop observatory and guide night cruises beneath the island sky."
+    }
+  ];
+
+  const ITEM_NAMES = [
+    ["Lime Splash","Orange Cooler","Pineapple Breeze","Berry Shake","Sunset Float","Coconut Special","Blue Lagoon Bowl","Grand Fruit Punch"],
+    ["Bread Roll","Club Sandwich","Garden Salad","Island Pasta","Grilled Catch","Lobster Plate","Seafood Feast","Chef's Banquet"],
+    ["Seed Pot","Young Sprout","Flower Bud","Hibiscus Pot","Twin Blooms","Ribbon Bouquet","Flower Basket","Grand Centerpiece"],
+    ["Rope Coil","Rescue Buoy","Tackle Box","Dive Mask","Dive Set","Supply Crate","Treasure Chest","Captain's Trunk"],
+    ["Fresh Towel","Soft Pillow","Linen Bundle","Breakfast Tray","Amenity Basket","Room Service","Welcome Chest","Luxury Cart"],
+    ["Lagoon Shell","Pearl Shell","Shell Bracelet","Coral Charm","Pearl Necklace","Glowing Conch","Island Idol","Lagoon Relic"],
+    ["Glass Lens","Star Chart","Brass Scope","Moon Globe","Comet Model","Sky Projector","Telescope Array","Celestial Beacon"]
+  ];
+
+  const UPGRADE_COSTS = [
+    { coins: 800, tools: 6, shifts: 2 },
+    { coins: 2600, tools: 18, shifts: 8 },
+    { coins: 7800, tools: 45, shifts: 24 },
+    { coins: 19000, tools: 95, shifts: 55 },
+    { coins: 48000, tools: 180, shifts: 110 }
+  ];
+
+  const THEMES = [
+    {
+      name: "Sunny Shores",
+      tagline: "Citrus flags and bright boardwalk gold",
+      cost: 0,
+      color: "#f7b52f",
+      dark: "#a85c20",
+      sky: ["#5be1e1", "#0a8fa4"],
+      wash: "rgba(255,191,66,.08)",
+      filter: "none",
+      itemFilter: "none",
+      tableFilter: "none",
+      accent: "#ffd34f",
+      motion: "sun",
+      islandFeature: "sun pennants"
+    },
+    {
+      name: "Coral Carnival",
+      tagline: "Shell garlands and hibiscus parade color",
+      cost: 1800,
+      color: "#f47783",
+      dark: "#9f3f58",
+      sky: ["#69d9e3", "#df708d"],
+      wash: "rgba(255,102,139,.13)",
+      filter: "hue-rotate(-15deg) saturate(1.12)",
+      itemFilter: "hue-rotate(-18deg) saturate(1.2) brightness(1.04)",
+      tableFilter: "hue-rotate(-10deg) saturate(1.08)",
+      accent: "#ff8ba4",
+      motion: "petal",
+      islandFeature: "hibiscus garlands"
+    },
+    {
+      name: "Moonlit Lagoon",
+      tagline: "Pearl lanterns and twilight crystal glow",
+      cost: 5200,
+      color: "#756ee9",
+      dark: "#3e3d91",
+      sky: ["#5264ba", "#183f79"],
+      wash: "rgba(80,75,190,.22)",
+      filter: "hue-rotate(10deg) saturate(.88) brightness(.94)",
+      itemFilter: "hue-rotate(22deg) saturate(.9) brightness(1.08)",
+      tableFilter: "hue-rotate(18deg) saturate(.88) brightness(.78)",
+      accent: "#a8b9ff",
+      motion: "star",
+      islandFeature: "glowing lanterns"
+    },
+    {
+      name: "Jungle Jewel",
+      tagline: "Emerald leaves and orchid lantern arches",
+      cost: 9800,
+      color: "#44ad68",
+      dark: "#216c43",
+      sky: ["#52c9a8", "#137a70"],
+      wash: "rgba(38,133,70,.14)",
+      filter: "hue-rotate(30deg) saturate(1.16)",
+      itemFilter: "hue-rotate(42deg) saturate(1.14) brightness(.98)",
+      tableFilter: "hue-rotate(24deg) saturate(1.13) brightness(.94)",
+      accent: "#72dc87",
+      motion: "leaf",
+      islandFeature: "leafy vines"
+    },
+    {
+      name: "Pearl Palace",
+      tagline: "Ivory drapery with royal golden trim",
+      cost: 18000,
+      color: "#e4b64d",
+      dark: "#93632d",
+      sky: ["#9adddf", "#568fbd"],
+      wash: "rgba(255,237,194,.18)",
+      filter: "sepia(.16) saturate(.82) brightness(1.08)",
+      itemFilter: "sepia(.28) saturate(.82) brightness(1.12)",
+      tableFilter: "sepia(.18) saturate(.86) brightness(1.07)",
+      accent: "#fff1b8",
+      motion: "pearl",
+      islandFeature: "pearl strings"
+    },
+    {
+      name: "Jamaican Breeze",
+      tagline: "A hidden emerald-and-gold island celebration",
+      cost: 0,
+      secret: true,
+      color: "#169b62",
+      dark: "#143f2d",
+      sky: ["#42d6ca", "#087e7c"],
+      wash: "rgba(15,155,91,.09)",
+      filter: "saturate(1.12) contrast(1.03)",
+      itemFilter: "hue-rotate(18deg) saturate(1.18) brightness(1.02)",
+      tableFilter: "hue-rotate(15deg) saturate(1.12) brightness(.98)",
+      accent: "#f6c744",
+      motion: "rhythm",
+      islandFeature: "emerald festival lanterns"
+    }
+  ];
+
+  const MAP_POSITIONS_BY_THEME = [
+    [[377,265],[204,413],[527,423],[184,594],[530,596],[198,790],[516,784]],
+    [[377,266],[203,414],[527,423],[184,594],[530,596],[198,790],[516,784]],
+    [[377,267],[202,415],[528,422],[184,594],[530,596],[199,789],[517,785]],
+    [[377,267],[203,414],[527,423],[184,594],[530,596],[199,789],[517,785]],
+    [[376,267],[205,418],[526,423],[184,594],[530,596],[198,791],[517,786]],
+    [[377,266],[203,414],[526,423],[184,594],[530,596],[198,791],[517,785]]
+  ];
+  const MAP_SITE_SIZE = 154;
+
+  function mapSite(index) {
+    const themeSites = MAP_POSITIONS_BY_THEME[save.selectedTheme] || MAP_POSITIONS_BY_THEME[0];
+    return { x: themeSites[index][0], y: themeSites[index][1], s: MAP_SITE_SIZE };
+  }
+  const MAP_PATHS = [
+    [[421,329],[405,363],[382,402],[351,440],[318,463],[285,492],[268,528],[290,558],[330,580],[354,606],[380,633],[390,671],[400,710],[424,750],[404,792],[394,838],[380,887],[360,936]],
+    [[211,455],[238,474],[274,487],[307,465],[351,440],[318,463],[285,492],[268,528],[290,558],[330,580],[354,606],[380,633]],
+    [[516,468],[482,482],[455,510],[430,540],[395,566],[360,580],[330,580],[354,606],[380,633]],
+    [[218,559],[245,573],[275,590],[310,595],[330,580],[354,606],[380,633],[398,612],[425,585],[450,560],[480,550],[501,542]],
+    [[205,817],[238,790],[265,755],[294,720],[326,688],[355,675],[390,671],[400,710],[424,750],[404,792],[394,838],[380,887],[360,936]],
+    [[510,812],[486,782],[454,753],[424,730],[400,710],[424,750],[404,792],[394,838],[380,887],[360,936]]
+  ];
+  const SAVE_KEY = "sarabelIsland_v1";
+  const LEGACY_SAVE_KEY = "tropicalTidesMergeResort_v1";
+
+  function defaultSave() {
+    return {
+      coins: 500,
+      stars: 0,
+      tools: 3,
+      reputation: 0,
+      levels: [0,0,0,0,0,0,0],
+      shifts: [0,0,0,0,0,0,0],
+      served: [0,0,0,0,0,0,0],
+      bestChains: [0,0,0,0,0,0,0],
+      bestShiftScores: [0,0,0,0,0,0,0],
+      unlocked: [true,false,false,false,false,false,false],
+      totalMerges: 0,
+      highScore: 0,
+      lifetimeScore: 0,
+      selectedTheme: 0,
+      ownedThemes: [true,false,false,false,false,false],
+      jamaicanUnlocked: false,
+      muted: false,
+      welcomed: false,
+      tutorial: [false,false,false,false,false,false,false],
+      lastStation: 0
+    };
+  }
+
+  function loadSave() {
+    const base = defaultSave();
+    try {
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY) || "null");
+      if (!raw) return base;
+      const previousThemes = Array.isArray(raw.ownedThemes) ? raw.ownedThemes.slice() : [];
+      const merged = Object.assign({}, base, raw);
+      for (const key of ["levels","shifts","served","bestChains","bestShiftScores","unlocked","tutorial"]) {
+        const previous = Array.isArray(raw[key]) ? raw[key] : [];
+        merged[key] = base[key].map((fallback,index) =>
+          previous[index] === undefined ? fallback : previous[index]
+        );
+      }
+      merged.ownedThemes = THEMES.map((_, index) => index === 0 || !!previousThemes[index]);
+      merged.jamaicanUnlocked = !!raw.jamaicanUnlocked;
+      merged.ownedThemes[5] = merged.jamaicanUnlocked;
+      merged.selectedTheme = Math.max(0, Math.min(THEMES.length-1, merged.selectedTheme|0));
+      if (!merged.ownedThemes[merged.selectedTheme]) merged.selectedTheme = 0;
+      merged.highScore = Math.max(0, merged.highScore|0);
+      merged.lifetimeScore = Math.max(0, merged.lifetimeScore|0);
+      merged.levels = merged.levels.map(v => Math.max(0, Math.min(5, v|0)));
+      merged.lastStation = Math.max(0, Math.min(STATIONS.length-1, merged.lastStation|0));
+      merged.unlocked = merged.unlocked.map((value,index) =>
+        index === 0 || !!value || merged.stars >= STATIONS[index].unlock
+      );
+      return merged;
+    } catch (_) {
+      return base;
+    }
+  }
+
+  let save = loadSave();
+  let screen = "loading";
+  let selectedStation = save.lastStation || 0;
+  let buttons = [];
+  let pressedButton = null;
+  let time = 0;
+  let lastFrame = performance.now();
+  let loadProgress = 0;
+  let loadingMessage = "Packing the ferry…";
+  let mapPulse = 0;
+  let mapTourists = [];
+  let toast = null;
+  let modal = null;
+  let game = null;
+  let particles = [];
+  let floaters = [];
+  let arcs = [];
+  let rings = [];
+  let mergeBursts = [];
+  let pointer = { down: false, x: 0, y: 0, sx: 0, sy: 0, dragging: false };
+
+  const deterministic = {
+    value: 0x72a4e9b,
+    next() {
+      this.value = (this.value * 1664525 + 1013904223) >>> 0;
+      return this.value / 4294967296;
+    }
+  };
+
+  function persist() {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+  }
+
+  function updateUnlocks() {
+    for (let i = 0; i < STATIONS.length; i++) {
+      if (!save.unlocked[i] && save.stars >= STATIONS[i].unlock) {
+        save.unlocked[i] = true;
+        toast = { text: STATIONS[i].name + " is ready to restore!", t: 4.5, color: STATIONS[i].color };
+        const site = mapSite(i);
+        burst(site.x, site.y, 28, STATIONS[i].color, "star");
+      }
+    }
+    persist();
+  }
+
+  function preload() {
+    const imageEntries = Object.entries(ASSET_PATHS);
+    let done = 0;
+    const total = imageEntries.length;
+    imageEntries.forEach(([key, path]) => {
+      const image = new Image();
+      image.onload = () => {
+        images[key] = image;
+        done++;
+        loadProgress = done / total;
+        loadingMessage = done < total ? "Growing palms…" : "Opening the island…";
+        if (done === total) {
+          setupMapPeople();
+          setTimeout(() => {
+            screen = "title";
+            if (save.welcomed) screen = "map";
+          }, 250);
+        }
+      };
+      image.onerror = () => {
+        done++;
+        loadProgress = done / total;
+        loadingMessage = "A crate missed the ferry.";
+        if (done === total) screen = "title";
+      };
+      image.src = path;
+    });
+    Object.entries(SOUND_PATHS).forEach(([key, path]) => {
+      const audio = new Audio(path);
+      audio.preload = key === "ocean" ? "auto" : "metadata";
+      if (key === "ocean") {
+        audio.loop = true;
+        audio.volume = 0.2;
+      }
+      sounds[key] = audio;
+    });
+  }
+
+  function beginAudio() {
+    if (save.muted) return;
+    const ocean = sounds.ocean;
+    if (ocean && ocean.paused) ocean.play().catch(() => {});
+  }
+
+  function playSound(name, volume = 0.75, rate = 1) {
+    if (save.muted || !sounds[name]) return;
+    try {
+      const audio = sounds[name].cloneNode();
+      audio.volume = Math.max(0, Math.min(1, volume));
+      audio.playbackRate = rate;
+      audio.play().catch(() => {});
+    } catch (_) {}
+  }
+
+  function toggleSound() {
+    save.muted = !save.muted;
+    if (sounds.ocean) {
+      if (save.muted) sounds.ocean.pause();
+      else beginAudio();
+    }
+    persist();
+  }
+
+  function setupMapPeople() {
+    mapTourists = [];
+    for (let i = 0; i < 12; i++) {
+      const pathIndex = i % MAP_PATHS.length;
+      const worker = i < 6;
+      mapTourists.push({
+        sprite: 8 + (i * 5) % 24,
+        t: (pathIndex * .127 + Math.floor(i / MAP_PATHS.length) * .47 + (i % 2) * .021) % 1,
+        speed: 0.015 + (i % 4) * 0.0015,
+        path: pathIndex,
+        bob: i * 0.8,
+        step: i * .71,
+        cadence: 2.25 + (i % 3) * .16,
+        worker,
+        animRow: worker ? 2 + (i % 4) : i % 2
+      });
+    }
+  }
+
+  function rounded(x, y, w, h, r, fill, stroke, line = 3) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.lineWidth = line; ctx.strokeStyle = stroke; ctx.stroke(); }
+  }
+
+  function text(value, x, y, size, color = "#59392d", align = "center", weight = 900, maxWidth) {
+    ctx.save();
+    ctx.font = `${weight} ${size}px "Trebuchet MS","Arial Rounded MT Bold",sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    if (maxWidth) ctx.fillText(value, x, y, maxWidth);
+    else ctx.fillText(value, x, y);
+    ctx.restore();
+  }
+
+  function shadowText(value, x, y, size, color = "#fff8df", align = "center", weight = 900, maxWidth) {
+    ctx.save();
+    ctx.font = `${weight} ${size}px "Trebuchet MS","Arial Rounded MT Bold",sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(3, size * .12);
+    ctx.strokeStyle = "rgba(76,51,41,.82)";
+    ctx.strokeText(value, x, y, maxWidth);
+    ctx.fillStyle = color;
+    ctx.fillText(value, x, y, maxWidth);
+    ctx.restore();
+  }
+
+  function wrapText(value, x, y, maxWidth, lineHeight, size, color, align = "center", weight = 700) {
+    ctx.save();
+    ctx.font = `${weight} ${size}px "Trebuchet MS",sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = color;
+    const words = value.split(/\s+/);
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const test = line ? line + " " + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else line = test;
+    }
+    if (line) lines.push(line);
+    lines.forEach((entry, index) => ctx.fillText(entry, x, y + index * lineHeight));
+    ctx.restore();
+    return lines.length * lineHeight;
+  }
+
+  function drawSprite(image, columns, rows, column, row, x, y, w, h, alpha = 1, flip = false) {
+    if (!image || !image.complete) return;
+    const sw = image.naturalWidth / columns;
+    const sh = image.naturalHeight / rows;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (flip) {
+      ctx.translate(x + w, y);
+      ctx.scale(-1, 1);
+      ctx.drawImage(image, column * sw, row * sh, sw, sh, 0, 0, w, h);
+    } else {
+      ctx.drawImage(image, column * sw, row * sh, sw, sh, x, y, w, h);
+    }
+    ctx.restore();
+  }
+
+  function drawThemedItemAura(theme, tier, size, alpha) {
+    const themeIndex = save.selectedTheme;
+    const pulse = .92 + Math.sin(time*3.2+tier*.9)*.06;
+    ctx.save();
+    ctx.globalAlpha = alpha * (themeIndex === 0 ? .12 : .23);
+    ctx.strokeStyle = theme.accent;
+    ctx.fillStyle = theme.accent;
+    ctx.lineWidth = Math.max(2,size*.035);
+    ctx.rotate(time*(themeIndex % 2 ? .18 : -.13)+tier*.18);
+    const radius = size*.42*pulse;
+    if (theme.motion === "petal") {
+      for (let i=0;i<5;i++) {
+        const angle = i*TAU/5;
+        ctx.save();
+        ctx.translate(Math.cos(angle)*radius,Math.sin(angle)*radius);
+        ctx.rotate(angle);
+        ctx.beginPath(); ctx.ellipse(0,0,size*.075,size*.035,0,0,TAU); ctx.fill();
+        ctx.restore();
+      }
+    } else if (theme.motion === "leaf") {
+      for (let i=0;i<4;i++) {
+        const angle = i*TAU/4;
+        ctx.save();
+        ctx.translate(Math.cos(angle)*radius,Math.sin(angle)*radius);
+        ctx.rotate(angle+.55);
+        ctx.beginPath(); ctx.ellipse(0,0,size*.085,size*.035,0,0,TAU); ctx.stroke();
+        ctx.restore();
+      }
+    } else if (theme.motion === "pearl") {
+      for (let i=0;i<8;i++) {
+        const angle = i*TAU/8;
+        ctx.beginPath();
+        ctx.arc(Math.cos(angle)*radius,Math.sin(angle)*radius,size*.025,0,TAU);
+        ctx.fill();
+      }
+    } else if (theme.motion === "rhythm") {
+      for (let i=0;i<8;i++) {
+        const angle = i*TAU/8;
+        const outer = radius * (i % 2 ? .86 : 1);
+        ctx.strokeStyle = i % 3 === 1 ? "#121d17" : theme.accent;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle)*radius*.68,Math.sin(angle)*radius*.68);
+        ctx.lineTo(Math.cos(angle)*outer,Math.sin(angle)*outer);
+        ctx.stroke();
+      }
+    } else {
+      const points = theme.motion === "star" ? 8 : 6;
+      for (let i=0;i<points;i++) {
+        const angle = i*TAU/points;
+        const inner = radius*.78;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle)*inner,Math.sin(angle)*inner);
+        ctx.lineTo(Math.cos(angle)*radius,Math.sin(angle)*radius);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawItem(station, tier, x, y, size, alpha = 1, rotation = 0, scale = 1, bubble = false) {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.scale(scale, scale);
+    drawThemedItemAura(theme,tier,size,alpha);
+    if (bubble) {
+      const pulse = 1 + Math.sin(time * 4 + x) * .035;
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = "rgba(116,231,247,.22)";
+      ctx.strokeStyle = "rgba(222,255,255,.86)";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * .48, 0, TAU);
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.save();
+    ctx.filter = theme.itemFilter;
+    if (station === 6) {
+      drawSprite(images.observatoryItems, 4, 2, tier % 4, Math.floor(tier / 4), -size/2, -size/2, size, size, alpha);
+    } else {
+      drawSprite(images.items, 8, 6, tier, station, -size/2, -size/2, size, size, alpha);
+    }
+    ctx.restore();
+    ctx.restore();
+  }
+
+  function drawThemeGameplayAmbience() {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    ctx.save();
+    ctx.fillStyle = theme.wash;
+    ctx.fillRect(0,0,W,H);
+    if (save.selectedTheme !== 0) {
+      drawThemeSprite(save.selectedTheme,1,360,398,238,.28);
+    }
+    for (let i=0;i<13;i++) {
+      const drift = theme.motion === "leaf" ? 15 : theme.motion === "petal" ? 10 : 4;
+      const x = (i*137 + time*drift*(i%2?1:-1) + 900) % 780 - 30;
+      const y = 390 + (i*83)%650 + Math.sin(time*(.7+i%3*.2)+i)*7;
+      const phase = .35+.25*Math.sin(time*2+i);
+      ctx.globalAlpha = phase;
+      ctx.fillStyle = theme.accent;
+      ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = 2;
+      if (theme.motion === "petal") {
+        ctx.save(); ctx.translate(x,y); ctx.rotate(time+i); ctx.beginPath(); ctx.ellipse(0,0,5,2.5,0,0,TAU); ctx.fill(); ctx.restore();
+      } else if (theme.motion === "leaf") {
+        ctx.save(); ctx.translate(x,y); ctx.rotate(time*.45+i); ctx.beginPath(); ctx.ellipse(0,0,6,2.3,0,0,TAU); ctx.stroke(); ctx.restore();
+      } else if (theme.motion === "pearl") {
+        ctx.beginPath(); ctx.arc(x,y,2.5+(i%3),0,TAU); ctx.fill();
+      } else if (theme.motion === "rhythm") {
+        ctx.save();
+        ctx.translate(x,y);
+        ctx.rotate(Math.sin(time*2+i)*.24);
+        ctx.fillStyle = i % 3 === 1 ? "#17231c" : i % 3 === 2 ? "#169b62" : theme.accent;
+        ctx.beginPath();
+        ctx.moveTo(0,-5); ctx.lineTo(5,0); ctx.lineTo(0,5); ctx.lineTo(-5,0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.save(); ctx.translate(x,y); ctx.rotate(time*.25); ctx.beginPath();
+        ctx.moveTo(0,-5); ctx.lineTo(1.6,-1.6); ctx.lineTo(5,0); ctx.lineTo(1.6,1.6);
+        ctx.lineTo(0,5); ctx.lineTo(-1.6,1.6); ctx.lineTo(-5,0); ctx.lineTo(-1.6,-1.6);
+        ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawIslandThemeFeatures() {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    const spots = [
+      [116,320],[603,337],[91,566],[627,575],[120,827],[603,836],[360,940]
+    ];
+    ctx.save();
+    spots.forEach((spot,index) => {
+      const [x,y] = spot;
+      const sway = Math.sin(time*1.25+index)*.08;
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.rotate(sway);
+      ctx.fillStyle = theme.accent;
+      ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = .5 + Math.sin(time*1.7+index)*.08;
+      if (theme.motion === "sun") {
+        ctx.beginPath(); ctx.moveTo(-12,-7); ctx.lineTo(13,-7); ctx.stroke();
+        for (let i=0;i<3;i++) {
+          ctx.beginPath();
+          ctx.moveTo(-10+i*10,-6);
+          ctx.lineTo(-5+i*10,4);
+          ctx.lineTo(i*10,-6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else if (theme.motion === "petal") {
+        for (let i=0;i<5;i++) {
+          const angle = i*TAU/5;
+          ctx.save(); ctx.rotate(angle);
+          ctx.beginPath(); ctx.ellipse(0,-7,4.5,7,0,0,TAU); ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillStyle = "#ffd36a";
+        ctx.beginPath(); ctx.arc(0,0,3.2,0,TAU); ctx.fill();
+      } else if (theme.motion === "star") {
+        const glow = ctx.createRadialGradient(0,0,1,0,0,16);
+        glow.addColorStop(0,theme.accent);
+        glow.addColorStop(1,"rgba(168,185,255,0)");
+        ctx.fillStyle = glow; ctx.globalAlpha = .5;
+        ctx.beginPath(); ctx.arc(0,0,16,0,TAU); ctx.fill();
+        ctx.globalAlpha = .9;
+        ctx.fillStyle = "#eef3ff";
+        ctx.beginPath();
+        ctx.moveTo(0,-8); ctx.lineTo(2,-2); ctx.lineTo(8,0); ctx.lineTo(2,2);
+        ctx.lineTo(0,8); ctx.lineTo(-2,2); ctx.lineTo(-8,0); ctx.lineTo(-2,-2);
+        ctx.closePath(); ctx.fill();
+      } else if (theme.motion === "leaf") {
+        for (let i=-1;i<=1;i++) {
+          ctx.save(); ctx.rotate(i*.62);
+          ctx.beginPath(); ctx.ellipse(0,-7,4.2,9,0,0,TAU); ctx.fill();
+          ctx.restore();
+        }
+        ctx.strokeStyle = "#266a43";
+        ctx.beginPath(); ctx.moveTo(0,5); ctx.lineTo(0,-11); ctx.stroke();
+      } else if (theme.motion === "rhythm") {
+        for (let i=-2;i<=2;i++) {
+          ctx.fillStyle = i % 3 === 0 ? "#111b16" : i % 2 ? "#169b62" : theme.accent;
+          ctx.beginPath();
+          ctx.moveTo(i*6,-6);
+          ctx.lineTo(i*6+4,0);
+          ctx.lineTo(i*6,6);
+          ctx.lineTo(i*6-4,0);
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else {
+        ctx.beginPath(); ctx.arc(0,1,13,Math.PI*1.08,Math.PI*1.92); ctx.stroke();
+        for (let i=-2;i<=2;i++) {
+          const angle = Math.PI*1.5+i*.21;
+          ctx.fillStyle = i ? theme.accent : "#fff9dd";
+          ctx.beginPath();
+          ctx.arc(Math.cos(angle)*13,1+Math.sin(angle)*13,3.5,0,TAU);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  function drawThemeSprite(themeIndex, row, x, y, size, alpha = 1) {
+    if (themeIndex === 5) {
+      drawSprite(images.jamaicanTheme, 1, 2, 0, row, x-size/2, y-size/2, size, size, alpha);
+    } else {
+      drawSprite(images.themes, 5, 2, themeIndex, row, x-size/2, y-size/2, size, size, alpha);
+    }
+  }
+
+  function drawBuilding(station, level, x, y, size, alpha = 1, themed = true) {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    if (themed && images.themes) {
+      drawThemeSprite(save.selectedTheme, 1, x, y+size*.15, size*1.18, alpha*.88);
+    }
+    ctx.save();
+    ctx.filter = themed ? theme.filter : "none";
+    if (station === 6) {
+      drawSprite(images.observatoryBuildings, 3, 2, level % 3, Math.floor(level / 3), x-size/2, y-size/2, size, size, alpha);
+    } else {
+      drawSprite(images.buildings, 6, 6, station, level, x-size/2, y-size/2, size, size, alpha);
+    }
+    ctx.restore();
+  }
+
+  function drawMapBuilding(station, level, site, alpha = 1) {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    const artX = site.x;
+    const groundY = site.y;
+    const artY = groundY-site.s*.24;
+    if (images.themes) {
+      drawThemeSprite(save.selectedTheme, 1, artX, groundY-site.s*.37, site.s*1.08, alpha*.86);
+    }
+    ctx.save();
+    ctx.filter = theme.filter;
+    if (station === 6) {
+      drawSprite(
+        images.observatoryBuildings,
+        3,
+        2,
+        level % 3,
+        Math.floor(level / 3),
+        artX-site.s/2,
+        artY-site.s/2,
+        site.s,
+        site.s,
+        alpha
+      );
+    } else {
+      drawSprite(
+        images.buildings,
+        6,
+        6,
+        station,
+        level,
+        artX-site.s/2,
+        artY-site.s/2,
+        site.s,
+        site.s,
+        alpha
+      );
+    }
+    ctx.restore();
+  }
+
+  function drawPerson(index, x, y, w, h, alpha = 1, flip = false) {
+    const col = index % 8, row = Math.floor(index / 8) % 4;
+    drawSprite(images.people, 8, 4, col, row, x-w/2, y-h, w, h, alpha, flip);
+  }
+
+  function drawPersonShadow(x, y, width, alpha = .2) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "#203d37";
+    ctx.beginPath();
+    ctx.ellipse(x, y-3, width*.46, width*.14, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawAnimatedPerson(row, frame, x, y, w, h, alpha = 1, flip = false, scale = 1, tilt = 0) {
+    if (!images.animatedPeople) {
+      drawPerson(row < 2 ? 8+row : row-2, x, y, w, h, alpha, flip);
+      return;
+    }
+    const frameSize = h;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+    ctx.scale(scale, scale);
+    drawSprite(images.animatedPeople, 8, 6, frame % 8, row % 6, -frameSize/2, -h, frameSize, h, alpha, flip);
+    ctx.restore();
+  }
+
+  function drawUi(index, x, y, size, alpha = 1) {
+    drawSprite(images.ui, 8, 2, index % 8, Math.floor(index / 8), x-size/2, y-size/2, size, size, alpha);
+  }
+
+  function addButton(id, x, y, w, h, action, enabled = true) {
+    buttons.push({ id, x, y, w, h, action, enabled });
+  }
+
+  function drawButton(id, label, x, y, w, h, color, action, enabled = true, small = false) {
+    const down = pressedButton === id;
+    ctx.save();
+    ctx.translate(0, down ? 4 : 0);
+    rounded(x, y, w, h, h/2, enabled ? color : "#b4b2a5", enabled ? "#684535" : "#77756d", 4);
+    if (enabled) {
+      ctx.globalAlpha = .26;
+      rounded(x+7, y+6, w-14, Math.max(8, h*.32), h/4, "#fff", null);
+      ctx.globalAlpha = 1;
+    }
+    text(label, x+w/2, y+h/2+1, small ? 20 : 25, enabled ? "#fff9e7" : "#eeece1", "center", 900, w-20);
+    ctx.restore();
+    addButton(id, x, y, w, h+4, action, enabled);
+  }
+
+  function drawCircleButton(id, x, y, radius, label, action, color = "#fff8df") {
+    const down = pressedButton === id;
+    ctx.save();
+    ctx.translate(0, down ? 3 : 0);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#684535";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill(); ctx.stroke();
+    text(label, x, y+1, radius*.78, "#59392d");
+    ctx.restore();
+    addButton(id, x-radius, y-radius, radius*2, radius*2+3, action, true);
+  }
+
+  function drawPill(icon, value, x, y, w = 145) {
+    rounded(x, y, w, 54, 27, "rgba(255,251,232,.95)", "rgba(74,105,52,.85)", 4);
+    drawUi(icon, x+28, y+27, 50);
+    text(formatNumber(value), x+58, y+28, 24, "#59392d", "left");
+  }
+
+  function formatNumber(value) {
+    if (value >= 1000000) return (value/1000000).toFixed(1) + "m";
+    if (value >= 10000) return (value/1000).toFixed(1) + "k";
+    return Math.floor(value).toLocaleString();
+  }
+
+  function pointIn(button, x, y) {
+    return x >= button.x && x <= button.x + button.w && y >= button.y && y <= button.y + button.h;
+  }
+
+  function easeOut(t) { return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3); }
+  function easeInOut(t) { t = Math.max(0, Math.min(1, t)); return t < .5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+  function lerp(a, b, t) { return a + (b-a)*t; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function laneSpacing(y) {
+    return lerp(88, 154, clamp((y-390)/610, 0, 1));
+  }
+  function laneX(lane, y) {
+    return 360 + (lane-1.5)*laneSpacing(y);
+  }
+  function laneBoundaryX(boundary, y) {
+    return 360 + (boundary-2)*laneSpacing(y);
+  }
+
+  function burst(x, y, count, color, kind = "dot") {
+    for (let i = 0; i < count; i++) {
+      const angle = deterministic.next() * TAU;
+      const speed = 70 + deterministic.next() * 210;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 70,
+        life: .55 + deterministic.next() * .75,
+        max: 1.3,
+        color,
+        size: 4 + deterministic.next() * 10,
+        kind: i % 4 === 0 ? kind : "dot",
+        spin: deterministic.next() * TAU
+      });
+    }
+  }
+
+  function addRing(x, y, color, radius = 24, duration = .38) {
+    rings.push({ x, y, color, radius, life: duration, max: duration });
+  }
+
+  function floatText(value, x, y, color = "#fff8df", size = 28) {
+    floaters.push({ value, x, y, color, size, life: 1.2 });
+  }
+
+  function updateEffects(dt) {
+    for (let i = rings.length - 1; i >= 0; i--) {
+      rings[i].life -= dt;
+      if (rings[i].life <= 0) rings.splice(i, 1);
+    }
+    for (let i = mergeBursts.length - 1; i >= 0; i--) {
+      mergeBursts[i].life -= dt;
+      if (mergeBursts[i].life <= 0) mergeBursts.splice(i, 1);
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      p.vy += 330 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.spin += dt * 4;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    for (let i = floaters.length - 1; i >= 0; i--) {
+      const f = floaters[i];
+      f.life -= dt;
+      f.y -= 38 * dt;
+      if (f.life <= 0) floaters.splice(i, 1);
+    }
+    for (let i = arcs.length - 1; i >= 0; i--) {
+      const a = arcs[i];
+      a.t += dt / a.duration;
+      if (a.t >= 1) {
+        if (a.done) a.done();
+        arcs.splice(i, 1);
+      }
+    }
+    if (toast) {
+      toast.t -= dt;
+      if (toast.t <= 0) toast = null;
+    }
+  }
+
+  function drawEffects() {
+    for (const ring of rings) {
+      const progress = 1-ring.life/ring.max;
+      ctx.save();
+      ctx.globalAlpha = (1-progress)*.78;
+      ctx.strokeStyle = ring.color;
+      ctx.lineWidth = 7*(1-progress)+2;
+      ctx.beginPath();
+      ctx.arc(ring.x,ring.y,ring.radius*(.55+progress*1.25),0,TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+    for (const fusion of mergeBursts) {
+      const progress = 1-fusion.life/fusion.max;
+      const orbit = (1-progress)*42;
+      ctx.save();
+      ctx.globalAlpha = Math.sin(Math.PI*progress)*.68;
+      ctx.globalCompositeOperation = "screen";
+      for (const side of [-1,1]) {
+        const angle = progress*Math.PI*2.2+side*Math.PI/2;
+        drawItem(fusion.station,fusion.tier,fusion.x+Math.cos(angle)*orbit,fusion.y+Math.sin(angle)*orbit*.45,44,1,side*progress*.8,.72,false);
+      }
+      const glow = ctx.createRadialGradient(fusion.x,fusion.y,2,fusion.x,fusion.y,60);
+      glow.addColorStop(0,"rgba(255,255,230,.95)");
+      glow.addColorStop(1,"rgba(255,220,80,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(fusion.x,fusion.y,60,0,TAU); ctx.fill();
+      ctx.restore();
+    }
+    for (const p of particles) {
+      const alpha = clamp(p.life / .35, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.spin);
+      if (p.kind === "coin") drawUi(0, 0, 0, p.size*2.2, alpha);
+      else if (p.kind === "star") {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        for (let n = 0; n < 10; n++) {
+          const r = n % 2 ? p.size*.42 : p.size;
+          const a = -Math.PI/2 + n*Math.PI/5;
+          const px = Math.cos(a)*r, py = Math.sin(a)*r;
+          n ? ctx.lineTo(px,py) : ctx.moveTo(px,py);
+        }
+        ctx.closePath(); ctx.fill();
+      } else if (p.kind === "heart") {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(0,p.size*.8);
+        ctx.bezierCurveTo(-p.size*1.4,-p.size*.2,-p.size*.75,-p.size*1.2,0,-p.size*.55);
+        ctx.bezierCurveTo(p.size*.75,-p.size*1.2,p.size*1.4,-p.size*.2,0,p.size*.8);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(0,0,p.size,0,TAU); ctx.fill();
+      }
+      ctx.restore();
+    }
+    for (const f of floaters) {
+      ctx.globalAlpha = clamp(f.life/.3, 0, 1);
+      shadowText(f.value, f.x, f.y, f.size, f.color);
+      ctx.globalAlpha = 1;
+    }
+    for (const a of arcs) {
+      const t = easeInOut(a.t);
+      const x = lerp(a.x0, a.x1, t);
+      const y = lerp(a.y0, a.y1, t) - Math.sin(Math.PI*t) * a.height;
+      for (let ghost=3;ghost>=1;ghost--) {
+        const back = clamp(t-ghost*.045,0,1);
+        const gx = lerp(a.x0,a.x1,back);
+        const gy = lerp(a.y0,a.y1,back)-Math.sin(Math.PI*back)*a.height;
+        drawItem(a.station,a.tier,gx,gy,a.size*.9,.055*(4-ghost),back*Math.PI*.12,.86,false);
+      }
+      ctx.save();
+      ctx.globalAlpha = .42*Math.sin(Math.PI*t);
+      ctx.strokeStyle = "#fff4b5";
+      ctx.lineWidth = 8;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x-18,y+20); ctx.lineTo(x+18,y+20); ctx.stroke();
+      ctx.restore();
+      drawItem(a.station, a.tier, x, y, a.size, 1, t*Math.PI*.12, 1-Math.sin(Math.PI*t)*.16, a.bubble);
+    }
+    if (toast) {
+      const a = clamp(Math.min((4.5-toast.t)*3, toast.t*2), 0, 1);
+      ctx.save();
+      ctx.globalAlpha = a;
+      rounded(72, 103, 576, 72, 36, "rgba(255,248,223,.97)", toast.color || "#55bd78", 5);
+      text(toast.text, 360, 140, 22, "#59392d", "center", 900, 530);
+      ctx.restore();
+    }
+  }
+
+  function drawLoading() {
+    const gradient = ctx.createLinearGradient(0, 0, 0, H);
+    gradient.addColorStop(0, "#37cad0");
+    gradient.addColorStop(1, "#08748a");
+    ctx.fillStyle = gradient; ctx.fillRect(0,0,W,H);
+    for (let i = 0; i < 18; i++) {
+      const x = (i * 83 + time*16) % 800 - 40;
+      const y = 180 + (i*137)%850;
+      ctx.fillStyle = `rgba(255,255,255,${.05 + (i%3)*.025})`;
+      ctx.beginPath(); ctx.arc(x,y,3+(i%4)*2,0,TAU); ctx.fill();
+    }
+    shadowText("SARABEL", 360, 430, 70, "#fff6c9");
+    shadowText("ISLAND", 360, 505, 94, "#ffd34f");
+    text("SLIDE  ·  MATCH  ·  SERVE", 360, 578, 22, "#fff8df", "center", 900);
+    rounded(100, 720, 520, 30, 15, "rgba(20,89,94,.44)", "rgba(255,255,255,.42)", 3);
+    rounded(107, 727, 506*loadProgress, 16, 8, "#ffd34f", null);
+    text(loadingMessage, 360, 790, 22, "#fff8df", "center", 700);
+  }
+
+  function drawTitle() {
+    drawMapBackdrop(true);
+    ctx.fillStyle = "rgba(5,73,83,.18)";
+    ctx.fillRect(0,0,W,H);
+    const bob = Math.sin(time*1.8)*7;
+    ctx.save();
+    ctx.translate(0,bob);
+    shadowText("SARABEL", 360, 220, 62, "#fff7c8");
+    shadowText("ISLAND", 360, 294, 96, "#ffd24c");
+    rounded(188, 352, 344, 48, 24, "rgba(38,139,125,.94)", "#fff8df", 4);
+    text("RESTORE THE RESORT", 360, 377, 22, "#fff8df");
+    ctx.restore();
+    drawBuilding(0, 5, 360, 585+bob, 330);
+    drawPersonShadow(220, 744+bob, 98, .2);
+    drawAnimatedPerson(0, Math.floor(time*1.4)%2, 220, 742+bob, 104, 172);
+    drawPersonShadow(510, 750+bob, 92, .2);
+    drawAnimatedPerson(1, Math.floor(time*1.4+.7)%2, 510, 748+bob, 96, 160, 1, true);
+    rounded(92, 812, 536, 96, 38, "rgba(255,249,223,.94)", "#6f8f4a", 5);
+    wrapText("Slide. Match. Serve. Restore your island.", 360, 837, 470, 27, 23, "#59392d", "center", 900);
+    drawButton("start", save.welcomed ? "RETURN TO ISLAND" : "OPEN THE RESORT", 122, 948, 476, 90, "#f47d63", () => {
+      beginAudio();
+      screen = "map";
+      if (!save.welcomed) {
+        save.welcomed = true;
+        modal = {
+          type: "story",
+          title: "A FRESH START",
+          body: "The old resort is quiet, but the ferry has arrived. Serve guests, earn stars, and restore every corner of the island.",
+          station: 0
+        };
+        persist();
+      }
+    });
+    drawCircleButton("sound", 654, 70, 34, save.muted ? "×" : "♪", toggleSound);
+    if (save.highScore > 0) {
+      rounded(228, 1056, 264, 52, 26, "rgba(255,249,223,.94)", "#e6ad32", 4);
+      text(`BEST SCORE  ${formatNumber(save.highScore)}`, 360, 1083, 18, "#71472e");
+    }
+    text("An endless island service adventure", 360, 1130, 20, "#fff8df", "center", 700);
+  }
+
+  const SEAGULL_ROUTE = [
+    [82,224],[306,165],[604,238],[612,414],[646,600],
+    [526,786],[350,884],[146,806],[76,612],[126,414],[286,302]
+  ];
+
+  function seagullPathPoint(progress) {
+    const count = SEAGULL_ROUTE.length;
+    const scaled = ((progress % 1) + 1) % 1 * count;
+    const index = Math.floor(scaled);
+    const local = scaled - index;
+    const p0 = SEAGULL_ROUTE[(index-1+count)%count];
+    const p1 = SEAGULL_ROUTE[index%count];
+    const p2 = SEAGULL_ROUTE[(index+1)%count];
+    const p3 = SEAGULL_ROUTE[(index+2)%count];
+    const t2 = local*local;
+    const t3 = t2*local;
+    return {
+      x: .5*((2*p1[0])+(-p0[0]+p2[0])*local+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+      y: .5*((2*p1[1])+(-p0[1]+p2[1])*local+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+    };
+  }
+
+  function seagullPose() {
+    const progress = time * .045;
+    const position = seagullPathPoint(progress);
+    const future = seagullPathPoint(progress + .002);
+    return {
+      x: position.x,
+      y: position.y + Math.sin(time*5.2)*2.2,
+      left: future.x < position.x,
+      angle: progress
+    };
+  }
+
+  function drawSeagull(pose) {
+    const frame = Math.floor(time * 8) % 8;
+    const size = 52;
+    drawSprite(
+      images.seagullFlight,
+      4,
+      2,
+      frame % 4,
+      Math.floor(frame / 4),
+      pose.x-size/2,
+      pose.y-size/2,
+      size,
+      size,
+      1,
+      pose.left
+    );
+  }
+
+  function unlockJamaicanSkin() {
+    const firstUnlock = !save.jamaicanUnlocked;
+    save.jamaicanUnlocked = true;
+    save.ownedThemes[5] = true;
+    save.selectedTheme = 5;
+    if (firstUnlock) {
+      const pose = seagullPose();
+      burst(pose.x, pose.y, 58, "#f6c744", "star");
+      playSound("upgrade", .9, 1.08);
+      toast = { text: "SECRET FOUND! JAMAICAN BREEZE UNLOCKED", t: 4.5, color: "#169b62" };
+    } else {
+      playSound("land", .55, 1.18);
+      toast = { text: "Jamaican Breeze is active!", t: 4, color: "#169b62" };
+    }
+    persist();
+  }
+
+  function drawMapBackdrop(title = false) {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    const maps = [
+      images.mapSunny,
+      images.mapCoral,
+      images.mapMoon,
+      images.mapJungle,
+      images.mapPearl,
+      images.mapJamaican
+    ];
+    const mapImage = maps[save.selectedTheme] || maps[0];
+    const gradient = ctx.createLinearGradient(0,0,0,H);
+    gradient.addColorStop(0,theme.sky[0]); gradient.addColorStop(1,theme.sky[1]);
+    ctx.fillStyle = gradient; ctx.fillRect(0,0,W,H);
+    if (mapImage) ctx.drawImage(mapImage, 0, 105, 720, 1080);
+    ctx.fillStyle = theme.wash;
+    ctx.fillRect(0,92,W,1100);
+    if (save.selectedTheme === 2) {
+      for (let i=0;i<18;i++) {
+        const x = (i*97+31)%700+10;
+        const y = 150+(i*151)%820;
+        const pulse = .35+.3*Math.sin(time*2.2+i);
+        ctx.fillStyle = `rgba(214,239,255,${pulse})`;
+        ctx.beginPath(); ctx.arc(x,y,1.5+(i%3),0,TAU); ctx.fill();
+      }
+    } else if (save.selectedTheme === 1 || save.selectedTheme === 3) {
+      for (let i=0;i<12;i++) {
+        const x = (i*113+time*6*(i%2?1:-1)+800)%760-20;
+        const y = 180+(i*89)%850 + Math.sin(time+i)*5;
+        ctx.fillStyle = save.selectedTheme === 1 ? "rgba(255,194,182,.4)" : "rgba(210,255,175,.36)";
+        ctx.beginPath(); ctx.ellipse(x,y,4,2.4,time+i,0,TAU); ctx.fill();
+      }
+    }
+    drawIslandThemeFeatures();
+    if (title) {
+      ctx.fillStyle = "rgba(12,102,116,.14)";
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+
+  function mapPath(path, t) {
+    const pts = MAP_PATHS[path % MAP_PATHS.length];
+    const wrapped = ((t % 1) + 1) % 1;
+    const travel = wrapped <= .5 ? wrapped * 2 : (1 - wrapped) * 2;
+    const lengths = [];
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const length = Math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1]);
+      lengths.push(length);
+      total += length;
+    }
+    let remaining = travel * total;
+    for (let i = 0; i < lengths.length; i++) {
+      if (remaining <= lengths[i] || i === lengths.length - 1) {
+        const local = lengths[i] ? clamp(remaining / lengths[i], 0, 1) : 0;
+        return {
+          x: lerp(pts[i][0], pts[i+1][0], local),
+          y: lerp(pts[i][1], pts[i+1][1], local)
+        };
+      }
+      remaining -= lengths[i];
+    }
+    return { x: pts[0][0], y: pts[0][1] };
+  }
+
+  function drawMap() {
+    drawMapBackdrop();
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    ctx.fillStyle = "rgba(8,91,100,.18)";
+    ctx.fillRect(0,0,W,100);
+    shadowText("SARABEL ISLAND", 360, 58, 30, "#fff8df");
+    text(`7 VENUES  \u2022  BEST ${formatNumber(save.highScore)}`, 360, 88, 15, "#fff4bf", "center", 900);
+    drawPill(0, save.coins, 18, 102, 160);
+    drawPill(1, save.stars, 188, 102, 140);
+    drawPill(2, save.tools, 338, 102, 145);
+    drawPill(3, save.reputation, 493, 102, 207);
+    drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
+
+    ctx.save();
+    ctx.globalAlpha = pressedButton === "shop" ? .78 : 1;
+    ctx.fillStyle = "#fff9e5";
+    ctx.strokeStyle = theme.dark;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(48,57,32,0,TAU); ctx.fill(); ctx.stroke();
+    drawThemeSprite(save.selectedTheme, 0, 48, 54, 53);
+    rounded(15,78,66,24,12,theme.color,theme.dark,2);
+    text("SHOP",48,90,12,"#fff9e7");
+    ctx.restore();
+    addButton("shop", 12, 22, 74, 82, () => { screen = "shop"; });
+
+    const walkers = [...mapTourists].sort((a,b) => mapPath(a.path,a.t).y - mapPath(b.path,b.t).y);
+    for (const person of walkers) {
+      const pos = mapPath(person.path, person.t);
+      const future = mapPath(person.path, (person.t+.003)%1);
+      const flip = future.x < pos.x;
+      const step = Math.floor(person.step)%4;
+      const frame = [2,3,4,3][step];
+      const h = person.worker ? 76 : 72;
+      const bob = Math.abs(Math.sin(person.step*Math.PI)) * 1.6;
+      drawPersonShadow(pos.x, pos.y+2, h*.48, .17);
+      drawAnimatedPerson(person.animRow, frame, pos.x, pos.y-bob, h, h, .98, flip, 1, Math.sin(person.step*Math.PI)*.008);
+    }
+
+    for (let i = 0; i < STATIONS.length; i++) {
+      const p = mapSite(i);
+      const unlocked = save.unlocked[i];
+      const selected = selectedStation === i;
+      if (selected) {
+        ctx.save();
+        ctx.globalAlpha = .3 + Math.sin(time*4)*.08;
+        ctx.fillStyle = STATIONS[i].color;
+        ctx.beginPath(); ctx.ellipse(p.x,p.y,p.s*.55,p.s*.23,0,0,TAU); ctx.fill();
+        ctx.restore();
+      }
+      drawMapBuilding(i, save.levels[i], p, unlocked ? 1 : .55);
+      const labelY = p.y+54;
+      if (!unlocked) {
+        drawUi(6, p.x, p.y-p.s*.22, 62);
+        rounded(p.x-76, labelY, 152, 36, 18, "rgba(255,248,223,.94)", "#725242", 3);
+        text(STATIONS[i].unlock + " STARS", p.x, labelY+19, 16, "#59392d");
+      } else {
+        rounded(p.x-84, labelY, 168, 38, 19, "rgba(255,248,223,.94)", selected ? STATIONS[i].color : "#739c58", 3);
+        text(STATIONS[i].short + "  LV " + save.levels[i], p.x, labelY+20, 16, "#59392d", "center", 900, 155);
+      }
+      addButton("station"+i, p.x-p.s*.56, p.y-p.s*.78, p.s*1.12, p.s*1.42, () => {
+        selectedStation = i;
+        save.lastStation = i;
+        persist();
+      });
+    }
+
+    const gull = seagullPose();
+    drawSeagull(gull);
+    addButton("secretSeagull", gull.x-40, gull.y-38, 80, 72, unlockJamaicanSkin);
+
+    drawMapCard();
+  }
+
+  function drawMapCard() {
+    const i = selectedStation;
+    const station = STATIONS[i];
+    const unlocked = save.unlocked[i];
+    const level = save.levels[i];
+    const y = 1050;
+    rounded(24, y, 672, 212, 32, "rgba(255,250,230,.97)", "#6e9b51", 5);
+    drawBuilding(i, level, 104, y+86, 128, unlocked ? 1 : .45);
+    text(station.name, 178, y+38, 25, "#59392d", "left", 900, 330);
+    if (!unlocked) {
+      wrapText(`Earn ${station.unlock} stars to open this station.`, 178, y+72, 320, 25, 19, "#805d50", "left", 700);
+      drawButton("locked", "LOCKED", 508, y+55, 160, 66, "#aaa79e", () => {}, false, true);
+    } else {
+      text(level === 5 ? "LANDMARK COMPLETE" : station.icon, 178, y+73, 15, station.dark, "left", 900, 310);
+      text(`${save.shifts[i]} shifts  •  ${save.served[i]} guests  •  best ${formatNumber(save.bestShiftScores[i])}`, 178, y+103, 16, "#7e665a", "left", 700, 320);
+      drawButton("play", "SERVE", 506, y+39, 162, 66, station.color, () => startStation(i), true, true);
+
+      if (level < 5) {
+        const cost = UPGRADE_COSTS[level];
+        const eligible = save.coins >= cost.coins && save.tools >= cost.tools && save.shifts[i] >= cost.shifts;
+        const label = eligible ? "UPGRADE" : `${formatNumber(cost.coins)}  •  ${cost.tools} TOOLS`;
+        drawButton("upgrade", label, 178, y+133, 490, 58, eligible ? "#55bd78" : "#a9a89d", () => upgradeStation(i), eligible, true);
+        const progress = Math.min(1, save.shifts[i] / cost.shifts);
+        rounded(62, y+181, 102, 14, 7, "#d7cdb4", null);
+        rounded(62, y+181, 102*progress, 14, 7, station.color, null);
+        text(`${save.shifts[i]}/${cost.shifts}`, 113, y+204, 14, "#6d554b");
+      } else {
+        rounded(178, y+133, 490, 58, 29, "#f3cc4f", "#a66b28", 4);
+        text("LEVEL 5 RESORT LANDMARK", 423, y+163, 20, "#71472e");
+      }
+    }
+  }
+
+  function buyOrSelectTheme(index) {
+    const theme = THEMES[index];
+    if (theme.secret && !save.jamaicanUnlocked) {
+      toast = { text: "A curious seagull is carrying this secret…", t: 4.5, color: theme.color };
+      return;
+    }
+    if (save.ownedThemes[index]) {
+      save.selectedTheme = index;
+      playSound("land", .55, 1.2);
+      toast = { text: theme.name + " is now on the island!", t: 4.5, color: theme.color };
+      persist();
+      return;
+    }
+    if (save.coins < theme.cost) return;
+    save.coins -= theme.cost;
+    save.ownedThemes[index] = true;
+    save.selectedTheme = index;
+    playSound("upgrade", .85, 1.08);
+    burst(360, 660, 48, theme.color, "star");
+    toast = { text: theme.name + " unlocked!", t: 4.5, color: theme.color };
+    persist();
+  }
+
+  function drawThemeCard(index, x, y) {
+    const theme = THEMES[index];
+    const owned = save.ownedThemes[index];
+    const selected = save.selectedTheme === index;
+    const canBuy = !theme.secret && save.coins >= theme.cost;
+    if (selected) {
+      ctx.save();
+      ctx.globalAlpha = .22+.07*Math.sin(time*4);
+      ctx.fillStyle = theme.color;
+      ctx.beginPath(); ctx.ellipse(x+158,y+124,168,132,0,0,TAU); ctx.fill();
+      ctx.restore();
+    }
+    rounded(x, y, 316, 250, 30, "rgba(255,250,232,.97)", selected ? theme.color : "#8caf72", selected ? 6 : 4);
+    drawThemeSprite(index, 0, x+158, y+73, 116, owned ? 1 : .62);
+    if (!owned) {
+      ctx.save();
+      ctx.globalAlpha = .52;
+      ctx.fillStyle = "#293f45";
+      ctx.beginPath(); ctx.arc(x+158,y+73,55,0,TAU); ctx.fill();
+      ctx.restore();
+      drawUi(6, x+158, y+73, 52);
+    }
+    text(theme.name, x+158, y+139, 21, theme.dark, "center", 900, 286);
+    wrapText(theme.tagline, x+158, y+158, 272, 20, 14, "#765d52", "center", 700);
+    const label = selected ? "ACTIVE" : owned ? "USE THEME" : theme.secret ? "FIND THE SEAGULL" : index === 0 ? "FREE" : `${formatNumber(theme.cost)} COINS`;
+    const enabled = !selected && (owned || canBuy || theme.secret);
+    drawButton("theme"+index, label, x+39, y+196, 238, 43, selected ? "#b6b19e" : enabled ? theme.color : "#aaa79d", () => buyOrSelectTheme(index), enabled, true);
+  }
+
+  function drawShop() {
+    drawMapBackdrop();
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    ctx.fillStyle = "rgba(11,75,78,.24)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "rgba(18,78,76,.36)";
+    ctx.fillRect(0,0,W,140);
+    drawCircleButton("shopback", 48, 60, 32, "‹", () => { screen = "map"; });
+    shadowText("ISLAND STYLE SHOP", 360, 48, 30, "#fff8df");
+    text("Dress every building at every upgrade level", 360, 82, 16, "#fff1bf", "center", 800);
+    drawPill(0, save.coins, 260, 103, 200);
+    rounded(478,103,218,54,27,"rgba(255,251,232,.95)","#d7a934",4);
+    text(`BEST  ${formatNumber(save.highScore)}`, 587, 131, 17, "#71472e");
+
+    drawThemeCard(0, 28, 181);
+    drawThemeCard(1, 376, 181);
+    drawThemeCard(2, 28, 451);
+    drawThemeCard(3, 376, 451);
+    drawThemeCard(4, 28, 721);
+    drawThemeCard(5, 376, 721);
+
+    rounded(106,1001,508,74,37,"rgba(255,250,232,.94)",theme.color,4);
+    drawThemeSprite(save.selectedTheme, 1, 164, 1038, 82);
+    wrapText("Every theme changes the island, dock, buildings, table, items, and motion without changing upgrade levels.", 386, 1014, 400, 22, 15, "#684d43", "center", 800);
+    text("A certain island bird knows one more secret.", 360, 1122, 17, "#fff8df", "center", 800);
+  }
+
+  function upgradeStation(index) {
+    const level = save.levels[index];
+    if (level >= 5) return;
+    const cost = UPGRADE_COSTS[level];
+    if (save.coins < cost.coins || save.tools < cost.tools || save.shifts[index] < cost.shifts) return;
+    save.coins -= cost.coins;
+    save.tools -= cost.tools;
+    save.levels[index]++;
+    save.reputation += 50 * (level + 1);
+    playSound("upgrade", .85);
+    const site = mapSite(index);
+    burst(site.x, site.y, 42, STATIONS[index].color, "star");
+    toast = { text: `${STATIONS[index].name} reached level ${level+1}!`, t: 4.5, color: STATIONS[index].color };
+    persist();
+  }
+
+  function randomTier(stationIndex = game ? game.station : selectedStation) {
+    const roll = deterministic.next();
+    const mission = save.shifts[stationIndex];
+    if (mission > 10 && roll > .92) return 2;
+    if (mission > 3 && roll > .72) return 1;
+    return 0;
+  }
+
+  function makeOrder() {
+    const mission = save.shifts[game.station];
+    const maxTier = Math.min(7, 2 + Math.floor(mission / 9) + (save.levels[game.station] > 2 ? 1 : 0));
+    const minTier = Math.min(3, 2 + Math.floor(mission / 22));
+    const target = minTier + Math.floor(deterministic.next() * (maxTier-minTier+1));
+    const twoPiece = game.station === 1 || game.station === 4;
+    let second = null;
+    if (twoPiece) {
+      second = minTier + Math.floor(deterministic.next() * (maxTier-minTier+1));
+      if (game.station === 4 && second === target) second = Math.min(7, second+1);
+    }
+    game.order = {
+      targets: second === null ? [target] : [target, second],
+      done: second === null ? [false] : [false, false],
+      guest: 8 + Math.floor(deterministic.next()*24),
+      guestAnim: Math.floor(deterministic.next()*2),
+      number: 100 + save.served[game.station] + game.ordersThisShift + 1,
+      value: (target + 1 + (second === null ? 0 : second + 1)) * 75
+    };
+  }
+
+  let nextPhysicsPieceId = 1;
+  const PHYSICS_TOP = 390;
+  const OVERFLOW_LINE = 958;
+  const LAUNCH_Y = 1060;
+
+  function pieceRadius(tier) {
+    return 34 + Math.min(7, tier) * 1.7;
+  }
+
+  function createPhysicsPiece(tier, x, y, options = {}) {
+    return {
+      id: nextPhysicsPieceId++,
+      tier,
+      x,
+      y,
+      vx: options.vx || 0,
+      vy: options.vy || 0,
+      r: pieceRadius(tier),
+      bubble: !!options.bubble,
+      scale: options.scale || 1,
+      angle: options.angle || 0,
+      spin: options.spin || 0,
+      trail: [],
+      trailTimer: 0,
+      fusion: options.fusion || 0,
+      age: options.age || 0,
+      entered: options.entered !== false,
+      mergeCooldown: options.mergeCooldown || 0,
+      popCooldown: 0,
+      ringCooldown: 0,
+      impact: 0,
+      settled: !!options.settled,
+      stillTime: options.stillTime || 0
+    };
+  }
+
+  function startStation(index) {
+    if (!save.unlocked[index]) return;
+    toast = null;
+    selectedStation = index;
+    save.lastStation = index;
+    const goal = 4 + Math.min(5, Math.floor(save.shifts[index] / 6));
+    game = {
+      station: index,
+      pieces: [],
+      current: randomTier(index),
+      next: randomTier(index),
+      launchX: 360,
+      aimVX: 0,
+      readyTimer: 0,
+      moving: false,
+      shots: 0,
+      combo: 0,
+      maxCombo: 0,
+      ordersThisShift: 0,
+      goal,
+      shiftCoins: 0,
+      shiftMerges: 0,
+      score: 0,
+      scorePulse: 0,
+      newBest: false,
+      order: null,
+      serving: null,
+      shelf: [],
+      servePop: 0,
+      cameraShake: 0,
+      comboPulse: 0,
+      overflowFlash: 0,
+      overflowCooldown: 0,
+      modifierFlash: 0,
+      windDir: deterministic.next() > .5 ? 1 : -1,
+      tideDir: deterministic.next() > .5 ? 1 : -1,
+      constellation: 0,
+      tutorial: !save.tutorial[index],
+      missionDone: false,
+      hintT: 0
+    };
+    const seedXs = [235, 318, 408, 486];
+    const seedYs = [PHYSICS_TOP+12, PHYSICS_TOP+58, PHYSICS_TOP+30, PHYSICS_TOP+82];
+    const seedTiers = [0, 2, 1, 0];
+    const count = save.shifts[index] > 8 ? 4 : 3;
+    for (let i = 0; i < count; i++) {
+      game.pieces.push(createPhysicsPiece(seedTiers[(i + index) % seedTiers.length], seedXs[i], seedYs[i], {
+        bubble: index === 5 && i === 0,
+        angle: (deterministic.next()-.5)*.08,
+        settled: true,
+        stillTime: .2
+      }));
+    }
+    makeOrder();
+    particles = [];
+    floaters = [];
+    arcs = [];
+    rings = [];
+    mergeBursts = [];
+    screen = "play";
+    beginAudio();
+    persist();
+  }
+
+  function launcherBounds() {
+    const radius = pieceRadius(game.current);
+    return {
+      left: laneBoundaryX(0, 1000) + radius + 8,
+      right: laneBoundaryX(4, 1000) - radius - 8
+    };
+  }
+
+  function clampLauncherX(value) {
+    const bounds = launcherBounds();
+    return clamp(value, bounds.left, bounds.right);
+  }
+
+  function launchPiece(launchX = game.launchX, swipeVX = 0) {
+    if (!game || game.readyTimer > 0 || game.serving || game.missionDone || game.tutorial) return;
+    game.launchX = clampLauncherX(launchX);
+    let vx = clamp(swipeVX, -430, 430);
+    const shotNumber = game.shots + 1;
+    if (game.station === 2 && shotNumber % 5 === 0) {
+      vx += game.windDir * 260;
+      game.modifierFlash = 1;
+    }
+    if (game.station === 3 && shotNumber % 4 === 0) {
+      vx += game.tideDir * 300;
+      for (const piece of game.pieces) piece.vx += game.tideDir * 72;
+      game.modifierFlash = 1;
+    }
+    const tier = game.current;
+    game.pieces.push(createPhysicsPiece(tier, game.launchX, LAUNCH_Y, {
+      vx,
+      vy: -1460,
+      bubble: game.station === 5 && deterministic.next() > .72,
+      spin: vx * .0015,
+      entered: false
+    }));
+    game.shots++;
+    game.combo = 0;
+    game.current = game.next;
+    game.next = randomTier(game.station);
+    game.readyTimer = .38;
+    game.aimVX = 0;
+    game.cameraShake = Math.min(.28, Math.abs(vx)/2100+.06);
+    playSound("slide", .62, .94 + tier*.025);
+    try { navigator.vibrate?.(7); } catch (_) {}
+  }
+
+  function addScore(points, x = 360, y = 220) {
+    if (!game) return;
+    const amount = Math.max(0, Math.round(points));
+    game.score += amount;
+    game.scorePulse = 1;
+    save.lifetimeScore += amount;
+    if (game.score > save.highScore) {
+      save.highScore = game.score;
+      game.newBest = true;
+    }
+    floatText(`+${formatNumber(amount)}`, x, y, "#fff0a2", 19);
+    persist();
+  }
+
+  function resolveSolidCollision(a, b, nx, ny, distance, minimumDistance) {
+    const overlap = minimumDistance - distance;
+    const invA = (a.settled ? .2 : 1) / (1 + a.tier*.13);
+    const invB = (b.settled ? .2 : 1) / (1 + b.tier*.13);
+    const invSum = invA + invB;
+    const correction = Math.max(0, overlap) / invSum;
+    a.x -= nx * correction * invA;
+    a.y -= ny * correction * invA;
+    b.x += nx * correction * invB;
+    b.y += ny * correction * invB;
+    const relativeX = b.vx - a.vx;
+    const relativeY = b.vy - a.vy;
+    const closing = relativeX*nx + relativeY*ny;
+    if (closing < 0) {
+      const impulse = -(1.42) * closing / invSum;
+      a.vx -= impulse * nx * invA;
+      a.vy -= impulse * ny * invA;
+      b.vx += impulse * nx * invB;
+      b.vy += impulse * ny * invB;
+      a.settled = b.settled = false;
+      a.stillTime = b.stillTime = 0;
+      const tangentX = -ny, tangentY = nx;
+      const tangentSpeed = relativeX*tangentX + relativeY*tangentY;
+      const friction = tangentSpeed * .055;
+      a.vx += friction*tangentX*invA;
+      a.vy += friction*tangentY*invA;
+      b.vx -= friction*tangentX*invB;
+      b.vy -= friction*tangentY*invB;
+      a.impact = Math.max(a.impact, Math.min(1, Math.abs(closing)/600));
+      b.impact = Math.max(b.impact, Math.min(1, Math.abs(closing)/600));
+      if (Math.abs(closing) > 220) {
+        playSound("land", .26, .9 + deterministic.next()*.14);
+        if (a.ringCooldown <= 0 && b.ringCooldown <= 0) {
+          addRing((a.x+b.x)/2,(a.y+b.y)/2,STATIONS[game.station].color,Math.min(a.r,b.r)*.82,.3);
+          a.ringCooldown = b.ringCooldown = .14;
+          game.cameraShake = Math.max(game.cameraShake,Math.min(.34,Math.abs(closing)/2400));
+        }
+      }
+    }
+  }
+
+  function mergePhysicsPair(a, b) {
+    if (!game.pieces.includes(a) || !game.pieces.includes(b)) return;
+    const newTier = Math.min(7, a.tier + 1);
+    const x = (a.x + b.x) / 2;
+    const y = (a.y + b.y) / 2;
+    const merged = createPhysicsPiece(newTier, x, y, {
+      vx: (a.vx+b.vx)*.18,
+      vy: (a.vy+b.vy)*.18,
+      scale: 1.42,
+      angle: (a.angle+b.angle)*.25,
+      spin: (a.spin+b.spin)*.18,
+      mergeCooldown: .045,
+      fusion: 1
+    });
+    game.pieces = game.pieces.filter(piece => piece !== a && piece !== b);
+    game.pieces.push(merged);
+    game.combo++;
+    game.comboPulse = 1;
+    game.cameraShake = Math.max(game.cameraShake,.18+Math.min(.22,game.combo*.035));
+    game.maxCombo = Math.max(game.maxCombo, game.combo);
+    game.shiftMerges++;
+    save.totalMerges++;
+    playSound(game.combo > 1 ? "chain" : "merge", .76, 1 + newTier*.025);
+    try { navigator.vibrate?.(game.combo > 2 ? [14,22,18] : 18); } catch (_) {}
+    mergeBursts.push({ station: game.station, tier: a.tier, x, y, life: .46, max: .46 });
+    const themeAccent = (THEMES[save.selectedTheme] || THEMES[0]).accent;
+    addRing(x,y,game.combo > 1 ? "#fff3a8" : themeAccent,42+game.combo*3,.46);
+    burst(x, y, 22 + game.combo*4, themeAccent, game.combo > 1 ? "star" : "coin");
+    floatText(game.combo > 1 ? `CHAIN ×${game.combo}` : "MERGE!", x, y-40, "#fff6c7", game.combo > 1 ? 28 : 22);
+    const bonus = 8 * (newTier+1) * Math.max(1, game.combo);
+    addScore((newTier+1)*125*Math.max(1,game.combo),x,y-68);
+    save.coins += bonus;
+    game.shiftCoins += bonus;
+    if (game.station === 0 && game.combo >= 3) {
+      const sun = 22 * game.combo;
+      save.coins += sun;
+      game.shiftCoins += sun;
+      floatText(`SUNSHINE +${sun}`, x, y-72, "#ffd958", 20);
+    }
+    if (game.station === 6) {
+      game.constellation++;
+      if (game.constellation >= 3) {
+        game.constellation = 0;
+        game.modifierFlash = 1;
+        if (merged.tier < 7) {
+          merged.tier++;
+          merged.r = pieceRadius(merged.tier);
+          merged.scale = 1.62;
+          merged.fusion = 1;
+          mergeBursts.push({ station: game.station, tier: merged.tier, x, y, life: .62, max: .62 });
+          addRing(x,y,"#dce4ff",66,.62);
+          burst(x,y,38,"#dce4ff","star");
+          floatText("CONSTELLATION BOOST!",x,y-92,"#eff2ff",24);
+          addScore(600*(merged.tier+1),x,y-120);
+          playSound("chain",.92,1.2);
+        } else {
+          const celestialBonus = 180;
+          save.coins += celestialBonus;
+          game.shiftCoins += celestialBonus;
+          floatText(`CELESTIAL +${celestialBonus}`,x,y-92,"#eff2ff",22);
+        }
+      } else {
+        floatText(`STAR LINK ${game.constellation}/3`,x,y-82,"#dce4ff",19);
+      }
+    }
+    save.bestChains[game.station] = Math.max(save.bestChains[game.station], game.combo);
+    tryServePiece(merged);
+  }
+
+  function tryServePiece(piece) {
+    if (!game.order || !game.pieces.includes(piece)) return false;
+    const targetIndex = game.order.targets.findIndex((tier, index) => !game.order.done[index] && tier === piece.tier);
+    if (targetIndex < 0) return false;
+    game.pieces = game.pieces.filter(candidate => candidate !== piece);
+    game.order.done[targetIndex] = true;
+    const targetX = 300 + targetIndex*118;
+    arcs.push({
+      station: game.station,
+      tier: piece.tier,
+      x0: piece.x,
+      y0: piece.y,
+      x1: targetX,
+      y1: 350,
+      height: 130,
+      duration: .72,
+      t: 0,
+      size: piece.r*2.05,
+      bubble: false,
+      done: () => {
+        if (!game || screen !== "play") return;
+        game.shelf.push({ tier: piece.tier, x: targetX, targetIndex });
+        game.servePop = 1;
+        playSound("serve", .7, 1 + piece.tier*.02);
+        burst(targetX, 350, 22, "#ffd35b", "coin");
+        addRing(targetX,350,"#fff2a8",38,.48);
+        if (game.order.done.every(Boolean)) beginGuestPickup();
+        else floatText("ONE MORE!", 360, 325, "#fff7d2", 23);
+      }
+    });
+    return true;
+  }
+
+  function physicsStep(dt) {
+    const dampingX = Math.exp(-2.05*dt);
+    const dampingY = Math.exp(-1.85*dt);
+    for (const piece of game.pieces) {
+      piece.age += dt;
+      piece.mergeCooldown = Math.max(0, piece.mergeCooldown-dt);
+      piece.popCooldown = Math.max(0, piece.popCooldown-dt);
+      piece.ringCooldown = Math.max(0, piece.ringCooldown-dt);
+      piece.impact = Math.max(0, piece.impact-dt*5.5);
+      piece.fusion = Math.max(0,piece.fusion-dt*3.2);
+      piece.scale += (1-piece.scale) * Math.min(1, dt*11);
+      for (let i=piece.trail.length-1;i>=0;i--) {
+        piece.trail[i].life -= dt;
+        if (piece.trail[i].life <= 0) piece.trail.splice(i,1);
+      }
+      piece.trailTimer -= dt;
+      const preSpeed = Math.hypot(piece.vx,piece.vy);
+      if (preSpeed > 220 && piece.trailTimer <= 0) {
+        piece.trail.push({x:piece.x,y:piece.y,angle:piece.angle,life:.3,max:.3});
+        if (piece.trail.length > 8) piece.trail.shift();
+        piece.trailTimer = .036;
+      }
+      piece.vx *= dampingX;
+      piece.vy *= dampingY;
+      piece.x += piece.vx*dt;
+      piece.y += piece.vy*dt;
+      piece.angle += piece.spin*dt;
+      piece.spin *= Math.exp(-4.5*dt);
+
+      if (piece.y < PHYSICS_TOP) {
+        piece.y = PHYSICS_TOP;
+        if (piece.vy < 0) {
+          piece.vy *= -.24;
+          piece.impact = Math.max(piece.impact,.5);
+          piece.settled = false;
+          piece.stillTime = 0;
+        }
+        piece.vx *= .82;
+      }
+      const boundedY = clamp(piece.y, 390, 1000);
+      const left = laneBoundaryX(0, boundedY) + piece.r + 5;
+      const right = laneBoundaryX(4, boundedY) - piece.r - 5;
+      if (piece.x < left) {
+        piece.x = left;
+        if (piece.vx < 0) piece.vx *= -.4;
+      } else if (piece.x > right) {
+        piece.x = right;
+        if (piece.vx > 0) piece.vx *= -.4;
+      }
+      if (piece.y > 1080) {
+        piece.y = 1080;
+        if (piece.vy > 0) piece.vy *= -.22;
+      }
+      if (piece.y < 920 || piece.age > .9) piece.entered = true;
+      const postSpeed = Math.hypot(piece.vx,piece.vy);
+      if (postSpeed < 18) {
+        piece.stillTime += dt;
+        if (piece.stillTime > .12) {
+          piece.vx = 0;
+          piece.vy = 0;
+          piece.spin = 0;
+          piece.settled = true;
+        }
+      } else {
+        piece.stillTime = 0;
+        piece.settled = false;
+      }
+    }
+
+    const claimed = new Set();
+    const merges = [];
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < game.pieces.length; i++) {
+        const a = game.pieces[i];
+        for (let j = i+1; j < game.pieces.length; j++) {
+          const b = game.pieces[j];
+          const dx = b.x-a.x, dy = b.y-a.y;
+          const minimumDistance = a.r+b.r-2;
+          const distanceSquared = dx*dx+dy*dy;
+          if (distanceSquared >= minimumDistance*minimumDistance) continue;
+          const distance = Math.max(.001, Math.sqrt(distanceSquared));
+          const nx = dx/distance, ny = dy/distance;
+          if (pass === 0 && a.tier === b.tier && a.tier < 7 && a.mergeCooldown <= 0 && b.mergeCooldown <= 0 && !claimed.has(a.id) && !claimed.has(b.id)) {
+            if (a.bubble || b.bubble) {
+              if (a.popCooldown <= 0 && b.popCooldown <= 0) {
+                a.bubble = false;
+                b.bubble = false;
+                a.popCooldown = b.popCooldown = .28;
+                game.modifierFlash = 1;
+                playSound("land", .6, 1.35);
+                burst((a.x+b.x)/2, (a.y+b.y)/2, 20, "#8beeff");
+                addRing((a.x+b.x)/2,(a.y+b.y)/2,"#bffcff",52,.5);
+                floatText("BUBBLE POP!", (a.x+b.x)/2, (a.y+b.y)/2-42, "#d8ffff", 22);
+              }
+            } else {
+              claimed.add(a.id);
+              claimed.add(b.id);
+              merges.push([a,b]);
+              continue;
+            }
+          }
+          resolveSolidCollision(a,b,nx,ny,distance,minimumDistance);
+        }
+      }
+    }
+    for (const [a,b] of merges) mergePhysicsPair(a,b);
+  }
+
+  function updatePhysics(dt) {
+    const steps = Math.max(1, Math.ceil(dt/(1/120)));
+    const step = dt/steps;
+    for (let i = 0; i < steps; i++) physicsStep(step);
+    game.moving = game.pieces.some(piece => Math.hypot(piece.vx,piece.vy) > 55 && piece.y > PHYSICS_TOP+2);
+  }
+
+  function checkPhysicsOverflow() {
+    if (game.overflowCooldown > 0) return;
+    let lost = null;
+    for (const piece of game.pieces) {
+      if (piece.entered && piece.y+piece.r > OVERFLOW_LINE && (!lost || piece.y > lost.y)) lost = piece;
+    }
+    if (!lost) return;
+    game.pieces = game.pieces.filter(piece => piece !== lost);
+    game.overflowCooldown = .65;
+    game.overflowFlash = 1;
+    game.combo = 0;
+    game.score = Math.max(0,game.score-100);
+    save.coins = Math.max(0, save.coins-20);
+    playSound("land", .65, .72);
+    burst(lost.x, Math.min(995,lost.y), 20, "#ef715f");
+    floatText("OVER THE LINE  −20", lost.x, Math.min(940,lost.y-30), "#ffe0d8", 21);
+  }
+
+  function beginGuestPickup() {
+    game.serving = {
+      phase: "arrive",
+      t: 0,
+      guest: game.order.guest,
+      guestAnim: game.order.guestAnim,
+      value: game.order.value,
+      orderNumber: game.order.number
+    };
+    game.servePop = 1;
+  }
+
+  function completeOrder() {
+    const reward = game.serving.value + save.levels[game.station]*30;
+    save.coins += reward;
+    save.reputation += 5 + game.order.targets.length*2;
+    save.served[game.station]++;
+    game.shiftCoins += reward;
+    game.ordersThisShift++;
+    addScore(reward*2+350,570,296);
+    playSound("coin", .75);
+    burst(570, 305, 34, "#ffd34f", "coin");
+    burst(590, 330, 16, "#ff7e91", "heart");
+    floatText(`ORDER +${reward}`, 470, 300, "#fff4ae", 28);
+    game.shelf = [];
+    game.serving = null;
+    if (game.ordersThisShift >= game.goal) {
+      finishShift();
+    } else {
+      makeOrder();
+    }
+    persist();
+  }
+
+  function finishShift() {
+    game.missionDone = true;
+    save.shifts[game.station]++;
+    save.stars += 1;
+    const toolReward = 2 + Math.floor(save.shifts[game.station] / 8);
+    save.tools += toolReward;
+    const bonus = 300 + save.shifts[game.station]*70 + save.levels[game.station]*100;
+    save.coins += bonus;
+    game.shiftCoins += bonus;
+    addScore(2200+game.goal*250+game.maxCombo*180,360,420);
+    save.bestShiftScores[game.station] = Math.max(save.bestShiftScores[game.station],game.score);
+    updateUnlocks();
+    playSound("upgrade", .75);
+    modal = {
+      type: "shift",
+      title: "SHIFT COMPLETE!",
+      station: game.station,
+      coins: game.shiftCoins,
+      tools: toolReward,
+      merges: game.shiftMerges,
+      chain: game.maxCombo,
+      score: game.score,
+      highScore: save.highScore,
+      newBest: game.newBest
+    };
+    persist();
+  }
+
+  function updateGame(dt) {
+    if (!game) return;
+    updatePhysics(dt);
+    game.readyTimer = Math.max(0, game.readyTimer-dt);
+    game.overflowCooldown = Math.max(0, game.overflowCooldown-dt);
+    game.scorePulse = Math.max(0,game.scorePulse-dt*4);
+    game.comboPulse = Math.max(0,game.comboPulse-dt*3.4);
+    game.servePop = Math.max(0,game.servePop-dt*2.2);
+    game.cameraShake = Math.max(0,game.cameraShake-dt*2.3);
+    checkPhysicsOverflow();
+    if (game.serving) {
+      game.serving.t += dt;
+      if (game.serving.phase === "arrive" && game.serving.t > .95) {
+        game.serving.phase = "greet";
+        game.serving.t = 0;
+        burst(610,310,12,"#ff8e9c","heart");
+      } else if (game.serving.phase === "greet" && game.serving.t > .42) {
+        game.serving.phase = "collect";
+        game.serving.t = 0;
+      } else if (game.serving.phase === "collect" && game.serving.t > .72) {
+        game.serving.phase = "cheer";
+        game.serving.t = 0;
+        playSound("serve",.8,1.12);
+        burst(610,285,20,"#ff8e9c","heart");
+        addRing(610,330,"#fff0a2",44,.55);
+        game.shelf = [];
+      } else if (game.serving.phase === "cheer" && game.serving.t > .64) {
+        game.serving.phase = "leave";
+        game.serving.t = 0;
+      } else if (game.serving.phase === "leave" && game.serving.t > .95) {
+        completeOrder();
+      }
+    }
+    game.overflowFlash = Math.max(0, game.overflowFlash-dt*2.5);
+    game.modifierFlash = Math.max(0, game.modifierFlash-dt*2.3);
+    game.hintT += dt;
+  }
+
+  function predictAimPath() {
+    const radius = pieceRadius(game.current);
+    let x = game.launchX;
+    let y = LAUNCH_Y-8;
+    const directionX = clamp(game.aimVX/1320, -.34, .34);
+    const length = Math.sqrt(1+directionX*directionX);
+    const dx = directionX/length*10;
+    const dy = -1/length*10;
+    const points = [{x,y}];
+    for (let step = 0; step < 90; step++) {
+      x += dx;
+      y += dy;
+      const boundedY = clamp(y,390,1000);
+      const left = laneBoundaryX(0,boundedY)+radius+5;
+      const right = laneBoundaryX(4,boundedY)-radius-5;
+      if (x < left || x > right || y <= PHYSICS_TOP) {
+        points.push({x:clamp(x,left,right),y:Math.max(PHYSICS_TOP,y)});
+        break;
+      }
+      let hit = false;
+      for (const piece of game.pieces) {
+        if (Math.hypot(x-piece.x,y-piece.y) <= radius+piece.r) {
+          hit = true;
+          break;
+        }
+      }
+      if (step%3 === 0) points.push({x,y});
+      if (hit) break;
+    }
+    return points;
+  }
+
+  function drawPhysicsPiece(piece) {
+    const speed = Math.hypot(piece.vx,piece.vy);
+    for (const trail of piece.trail) {
+      const alpha = (trail.life/trail.max)*.2;
+      const scale = .72+.25*(trail.life/trail.max);
+      drawItem(game.station,piece.tier,trail.x,trail.y,piece.r*2.25,alpha,trail.angle,scale,piece.bubble);
+    }
+    if (piece.fusion > 0) {
+      const pulse = 1-piece.fusion;
+      ctx.save();
+      ctx.globalAlpha = piece.fusion*.62;
+      ctx.strokeStyle = "#fff4a8";
+      ctx.lineWidth = 8*piece.fusion;
+      ctx.beginPath(); ctx.arc(piece.x,piece.y,piece.r*(1.1+pulse*.9),0,TAU); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.globalAlpha = .22;
+    ctx.fillStyle = "#5b3826";
+    ctx.beginPath();
+    ctx.ellipse(piece.x+5,piece.y+piece.r*.58,piece.r*.68,piece.r*.26,0,0,TAU);
+    ctx.fill();
+    ctx.restore();
+    const squash = 1 + piece.impact*.16;
+    const stretch = Math.min(.2,speed/6500);
+    const motionAngle = speed > 20 ? Math.atan2(piece.vy,piece.vx)+Math.PI/2 : 0;
+    ctx.save();
+    ctx.translate(piece.x,piece.y);
+    if (speed > 20) ctx.rotate(motionAngle);
+    ctx.scale((1-stretch)/squash,(1+stretch)*squash);
+    if (speed > 20) ctx.rotate(-motionAngle);
+    drawItem(game.station,piece.tier,0,0,piece.r*2.35,1,piece.angle,piece.scale*(1+piece.fusion*.08),piece.bubble);
+    ctx.restore();
+  }
+
+  function drawPlay() {
+    ctx.save();
+    const shake = game.cameraShake*9;
+    ctx.translate(Math.sin(time*94)*shake,Math.cos(time*71)*shake*.55);
+    const station = STATIONS[game.station];
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    ctx.save();
+    ctx.filter = theme.tableFilter;
+    ctx.drawImage(images.table, 0, 0, W, H);
+    ctx.restore();
+    drawThemeGameplayAmbience();
+    ctx.fillStyle = station.color + "18";
+    ctx.fillRect(0,0,W,H);
+
+    drawPlayTop();
+    drawPhysicsGuides();
+
+    const sortedPieces = [...game.pieces].sort((a,b) => a.y-b.y || a.id-b.id);
+    for (const piece of sortedPieces) drawPhysicsPiece(piece);
+
+    if (game.readyTimer <= 0 && !game.serving && !game.missionDone) {
+      const bob = Math.sin(time*5)*4;
+      const path = predictAimPath();
+      ctx.save();
+      ctx.setLineDash([9,11]);
+      ctx.lineDashOffset = -time*34;
+      ctx.strokeStyle = "rgba(255,255,242,.78)";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      path.forEach((point,index) => index ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y));
+      ctx.stroke();
+      const end = path[path.length-1];
+      ctx.setLineDash([]);
+      ctx.strokeStyle = station.color;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(end.x,end.y,10+Math.sin(time*5)*2,0,TAU); ctx.stroke();
+      ctx.restore();
+      const hold = pointer.down && pointer.sy > 930 ? 1.08 : 1;
+      const glow = ctx.createRadialGradient(game.launchX,LAUNCH_Y+bob,8,game.launchX,LAUNCH_Y+bob,62);
+      glow.addColorStop(0,station.color+"66");
+      glow.addColorStop(1,"rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(game.launchX,LAUNCH_Y+bob,62,0,TAU); ctx.fill();
+      drawItem(game.station,game.current,game.launchX,LAUNCH_Y+bob,pieceRadius(game.current)*2.45,1,game.aimVX*.00016,hold,false);
+    }
+
+    drawRecipeStrip();
+    drawGuestAndShelf();
+    drawModifier();
+    if (game.overflowFlash > 0) {
+      ctx.fillStyle = `rgba(239,87,67,${game.overflowFlash*.18})`;
+      ctx.fillRect(0,360,W,650);
+    }
+    if (game.tutorial) drawTutorial();
+    ctx.restore();
+  }
+
+  function drawPlayTop() {
+    const station = STATIONS[game.station];
+    ctx.fillStyle = "rgba(16,80,83,.22)";
+    ctx.fillRect(0,0,W,118);
+    drawCircleButton("back", 48, 62, 32, "‹", () => {
+      screen = "map";
+      game = null;
+      modal = null;
+      persist();
+    });
+    drawPill(0, save.coins, 94, 32, 160);
+    rounded(270, 32, 286, 58, 29, "rgba(255,248,223,.94)", game.newBest ? "#e6ad32" : station.dark, game.newBest ? 6 : 4);
+    text(station.short, 413, 49, 18, "#59392d");
+    ctx.save();
+    ctx.translate(413,74);
+    const scoreScale = 1+game.scorePulse*.09;
+    ctx.scale(scoreScale,scoreScale);
+    text(`SCORE ${formatNumber(game.score)}  •  BEST ${formatNumber(save.highScore)}`, 0, 0, 13, game.newBest ? "#b06b22" : "#7a584a", "center", 900, 260);
+    ctx.restore();
+    drawCircleButton("sound", 670, 62, 30, save.muted ? "×" : "♪", toggleSound);
+    rounded(38, 126, 220, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
+    text(`GUESTS  ${game.ordersThisShift}/${game.goal}`, 148, 155, 19, "#59392d");
+    rounded(268, 139, 186, 36, 18, "rgba(21,75,77,.66)", null);
+    const progress = game.ordersThisShift/game.goal;
+    rounded(272, 143, 178*progress, 28, 14, station.color, null);
+    text(`${Math.round(progress*100)}%`, 361, 157, 15, "#fff8df");
+    rounded(470, 126, 210, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
+    text(`NEXT`, 500, 154, 15, "#7b5b4e", "left");
+    drawItem(game.station, game.next, 622, 154, 53);
+  }
+
+  function drawPhysicsGuides() {
+    ctx.save();
+    ctx.globalAlpha = .48;
+    ctx.strokeStyle = "rgba(255,255,242,.9)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(game.launchX-34,1004);
+    ctx.lineTo(game.launchX+34,1004);
+    ctx.moveTo(game.launchX-34,1004);
+    ctx.lineTo(game.launchX-22,995);
+    ctx.moveTo(game.launchX-34,1004);
+    ctx.lineTo(game.launchX-22,1013);
+    ctx.moveTo(game.launchX+34,1004);
+    ctx.lineTo(game.launchX+22,995);
+    ctx.moveTo(game.launchX+34,1004);
+    ctx.lineTo(game.launchX+22,1013);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawOrderTicket(x, y) {
+    const order = game.order;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(Math.sin(time*.9)*.008);
+    rounded(-128, -72, 256, 144, 12, "#fff9e8", "#8e6551", 4);
+    ctx.fillStyle = "#f0dec0";
+    for (let i=0;i<6;i++) ctx.fillRect(-102+i*38,-72,18,7);
+    text("ORDER " + order.number, 0, -48, 17, "#8f4d41");
+    const targetCount = order.targets.length;
+    order.targets.forEach((tier,index) => {
+      const px = targetCount === 1 ? 0 : (index ? 53 : -53);
+      drawItem(game.station, tier, px, 8, 72, order.done[index] ? .28 : 1);
+      if (order.done[index]) drawUi(7, px+25, 28, 38);
+    });
+    text(formatNumber(order.value), 0, 56, 18, "#6d4938");
+    drawUi(0, -47, 56, 29);
+    ctx.restore();
+  }
+
+  function drawGuestAndShelf() {
+    drawOrderTicket(360, 260);
+    const workerRows = [2,5,3,4,5,4,2];
+    const workerRow = workerRows[game.station];
+    const workerFrame = game.serving && (game.serving.phase === "collect" || game.serving.phase === "cheer") ? 5 : Math.floor(time*1.3)%2;
+    drawPersonShadow(105,382,68,.18);
+    drawAnimatedPerson(workerRow,workerFrame,105,380,75,128,.98,false,1+Math.sin(time*2.4)*.008);
+
+    const guestRow = game.serving ? game.serving.guestAnim : game.order.guestAnim;
+    let guestX = 612, guestY = 374, alpha = .98, flip = false;
+    let frame = Math.floor(time*1.35)%2;
+    let scale = 1;
+    let tilt = 0;
+    if (game.serving) {
+      const s = game.serving;
+      if (s.phase === "arrive") {
+        const t = easeOut(s.t/.95);
+        guestX = lerp(760, 610, t);
+        frame = [2,3,4,3][Math.floor(s.t*8)%4];
+        scale = .82+.18*t+Math.sin(Math.PI*t)*.08;
+        tilt = Math.sin(s.t*9)*.025;
+      } else if (s.phase === "greet") {
+        frame = 7;
+        scale = 1+Math.sin(s.t/.42*Math.PI)*.08;
+      } else if (s.phase === "collect") {
+        frame = 6;
+        guestX = 610-Math.sin(s.t/.72*Math.PI)*22;
+        guestY -= Math.sin(s.t/.72*Math.PI)*15;
+        scale = 1+Math.sin(s.t/.72*Math.PI)*.1;
+      } else if (s.phase === "cheer") {
+        frame = 5;
+        guestY -= Math.abs(Math.sin(s.t/.64*Math.PI*2))*12;
+        scale = 1+Math.sin(s.t/.64*Math.PI)*.12;
+      } else {
+        const t = easeInOut(s.t/.95);
+        guestX = lerp(610, -90, t);
+        flip = true;
+        frame = [2,3,4,3][Math.floor(s.t*8)%4];
+        guestY -= Math.abs(Math.sin(s.t*8))*4;
+      }
+    } else {
+      guestY += Math.sin(time*2.2)*2;
+    }
+    drawPersonShadow(guestX,guestY+1,72,.2*alpha);
+    drawAnimatedPerson(guestRow,frame,guestX,guestY,88,145,alpha,flip,scale,tilt);
+
+    if (game.serving && (game.serving.phase === "greet" || game.serving.phase === "cheer")) {
+      const phaseDuration = game.serving.phase === "greet" ? .42 : .64;
+      const pop = Math.min(1,easeOut(game.serving.t/(phaseDuration*.35)));
+      ctx.save();
+      ctx.translate(520,244);
+      ctx.scale(pop,pop);
+      rounded(-86,-31,172,62,29,"rgba(255,250,235,.98)","#f1878c",4);
+      text(game.serving.phase === "greet" ? "MY ORDER!" : "PERFECT!",0,1,17,"#8b4650");
+      ctx.restore();
+    }
+
+    rounded(256, 344, 208, 36, 18, "rgba(107,63,42,.8)", "#f5d9a7", 3);
+    for (const shelfItem of game.shelf) {
+      const pop = 1+game.servePop*.16;
+      drawItem(game.station, shelfItem.tier, shelfItem.x, 348-Math.sin(time*4+shelfItem.targetIndex)*3, 65, 1, Math.sin(time*3+shelfItem.targetIndex)*.03, pop);
+    }
+  }
+
+  function drawModifier() {
+    const s = game.station;
+    if (s < 2) {
+      if (s === 0 && game.combo > 0) {
+        ctx.save();
+        ctx.translate(129,221);
+        const pulse = 1+game.comboPulse*.11;
+        ctx.scale(pulse,pulse);
+        rounded(-91, -28, 182, 56, 28, "rgba(255,248,223,.94)", STATIONS[s].color, 4);
+        text(`STREAK ×${game.combo}`, 0, -7, 17, "#71482e");
+        for (let i=0;i<5;i++) {
+          ctx.fillStyle = i < Math.min(5,game.combo) ? "#ffd34f" : "#dacfb3";
+          ctx.beginPath(); ctx.arc(-40+i*20,13,5,0,TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
+      return;
+    }
+    if (s === 6) {
+      rounded(44, 196, 204, 54, 27, "rgba(255,248,223,.93)", STATIONS[s].color, 4);
+      drawItem(6, 7, 76, 223, 44);
+      text(`STAR LINK ${game.constellation}/3`, 160, 223, 15, "#51457d");
+      if (game.modifierFlash > 0) {
+        ctx.save();
+        ctx.globalAlpha = game.modifierFlash;
+        drawItem(6, 7, 360, 700, 156);
+        shadowText("CONSTELLATION!", 360, 810, 30, "#f4f2ff");
+        ctx.restore();
+      }
+      return;
+    }
+    const isGarden = s === 2, isMarina = s === 3, isLagoon = s === 5;
+    if (s === 4) return;
+    const every = isGarden ? 5 : isMarina ? 4 : 0;
+    const remaining = every ? every - (game.shots % every) : 0;
+    const icon = isGarden ? 12 : isMarina ? 13 : 14;
+    rounded(44, 196, 176, 54, 27, "rgba(255,248,223,.93)", STATIONS[s].color, 4);
+    drawUi(icon, 76, 223, 48);
+    if (isLagoon) text("BUBBLES", 143, 223, 16, "#71482e");
+    else text(`${remaining} SLIDES`, 147, 223, 16, "#71482e");
+    if (game.modifierFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = game.modifierFlash;
+      drawUi(icon, 360, 700, 150);
+      shadowText(isGarden ? "WIND SHIFT!" : isMarina ? "TIDE TURN!" : "POP!", 360, 810, 32, "#fff8df");
+      ctx.restore();
+    }
+  }
+
+  function drawRecipeStrip() {
+    rounded(28, 1158, 664, 103, 34, "rgba(255,250,232,.97)", "#6c9b4c", 5);
+    for (let tier = 0; tier < 8; tier++) {
+      const x = 76 + tier*81;
+      if (tier < 7) {
+        text("›", x+42, 1209, 24, "#9c7048");
+      }
+      drawItem(game.station, tier, x, 1208, 62);
+    }
+  }
+
+  function drawTutorial() {
+    ctx.fillStyle = "rgba(10,55,59,.47)";
+    ctx.fillRect(0,0,W,H);
+    rounded(62, 376, 596, 420, 36, "rgba(255,249,228,.98)", STATIONS[game.station].color, 6);
+    text(STATIONS[game.station].icon, 360, 430, 25, STATIONS[game.station].dark);
+    wrapText(STATIONS[game.station].rule, 360, 470, 500, 31, 21, "#654a40", "center", 700);
+    drawItem(game.station, 0, 205, 643, 105);
+    drawItem(game.station, 0, 360, 575, 105);
+    drawItem(game.station, 1, 515, 643, 112);
+    shadowText("＋", 282, 630, 37, "#f47d63");
+    shadowText("＝", 438, 630, 37, "#55bd78");
+    text("Place it anywhere, flick upward, and match at the first point of contact.", 360, 719, 17, "#786157", "center", 700, 520);
+    drawButton("tutorial", "START SERVING", 180, 827, 360, 75, STATIONS[game.station].color, () => {
+      game.tutorial = false;
+      save.tutorial[game.station] = true;
+      persist();
+    }, true, true);
+  }
+
+  function drawModal() {
+    if (!modal) return;
+    ctx.fillStyle = "rgba(9,57,62,.58)";
+    ctx.fillRect(0,0,W,H);
+    if (modal.type === "story") {
+      rounded(55, 345, 610, 500, 38, "#fff9e7", "#6b9b50", 6);
+      drawPersonShadow(150,660,114,.18);
+      drawAnimatedPerson(2,7,150,655,124,210,1,false,1+Math.sin(time*2.4)*.012);
+      shadowText(modal.title, 400, 415, 31, "#f47d63");
+      wrapText(modal.body, 418, 475, 410, 33, 21, "#62473d", "center", 700);
+      drawButton("storyok", "LET'S RESTORE", 260, 700, 330, 76, "#55bd78", () => { modal = null; }, true, true);
+    } else if (modal.type === "shift") {
+      const station = STATIONS[modal.station];
+      rounded(48, 288, 624, 664, 40, "#fff9e7", station.color, 7);
+      drawUi(7, 360, 370, 116);
+      shadowText(modal.title, 360, 456, 36, station.color);
+      text(station.name, 360, 501, 20, "#765c4e");
+      rounded(102,526,516,66,26,modal.newBest ? "#fff1af" : "#f3ead2",modal.newBest ? "#e4a72e" : "#c2a97f",4);
+      drawUi(1,139,559,52);
+      text(modal.newBest ? "NEW HIGH SCORE" : "SHIFT SCORE",176,548,14,modal.newBest ? "#a35d27" : "#8b6b58","left");
+      text(formatNumber(modal.score),176,572,26,"#59392d","left");
+      text(`BEST ${formatNumber(modal.highScore)}`,578,559,16,"#8b6b58","right");
+      const stats = [
+        [0, "COINS", modal.coins],
+        [2, "TOOLS", modal.tools],
+        [15, "MERGES", modal.merges],
+        [1, "BEST CHAIN", "×"+modal.chain]
+      ];
+      stats.forEach((entry,index) => {
+        const col = index%2, row = Math.floor(index/2);
+        const x = 102+col*265, y = 607+row*96;
+        rounded(x,y,250,80,22,"#f3ead2","#c2a97f",3);
+        drawUi(entry[0],x+43,y+40,54);
+        text(entry[1],x+82,y+25,14,"#8b6b58","left");
+        text(String(entry[2]),x+82,y+53,22,"#59392d","left");
+      });
+      drawButton("continue", "KEEP SERVING", 102, 814, 244, 70, station.color, () => {
+        const index = modal.station;
+        modal = null;
+        startStation(index);
+      }, true, true);
+      drawButton("island", "VISIT ISLAND", 374, 814, 244, 70, "#55bd78", () => {
+        modal = null;
+        game = null;
+        screen = "map";
+      }, true, true);
+      text("Shifts continue forever and rewards grow with your resort.", 360, 916, 16, "#80685b", "center", 700, 525);
+    }
+  }
+
+  function update(dt) {
+    time += dt;
+    updateEffects(dt);
+    if (screen === "map" || screen === "title") {
+      mapPulse += dt;
+      for (const person of mapTourists) {
+        person.t += person.speed*dt;
+        if (person.t > 1) person.t -= 1;
+        person.step = (person.step + person.cadence*dt) % 4;
+      }
+    }
+    if (screen === "play") updateGame(dt);
+  }
+
+  function draw() {
+    buttons = [];
+    ctx.clearRect(0,0,W,H);
+    if (screen === "loading") drawLoading();
+    else if (screen === "title") drawTitle();
+    else if (screen === "map") drawMap();
+    else if (screen === "shop") drawShop();
+    else if (screen === "play" && game) drawPlay();
+    drawEffects();
+    if (modal) drawModal();
+  }
+
+  function frame(now) {
+    const dt = Math.min(.05, (now-lastFrame)/1000 || 0);
+    lastFrame = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function canvasPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX-rect.left)*W/rect.width,
+      y: (event.clientY-rect.top)*H/rect.height
+    };
+  }
+
+  canvas.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    beginAudio();
+    const p = canvasPoint(event);
+    pointer.down = true;
+    pointer.x = pointer.sx = p.x;
+    pointer.y = pointer.sy = p.y;
+    pointer.dragging = false;
+    pressedButton = null;
+    for (let i = buttons.length-1; i >= 0; i--) {
+      if (pointIn(buttons[i], p.x, p.y) && buttons[i].enabled) {
+        pressedButton = buttons[i].id;
+        break;
+      }
+    }
+    if (!pressedButton && screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && p.y > 930) {
+      game.launchX = clampLauncherX(p.x);
+      game.aimVX = 0;
+    }
+    try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+  }, { passive: false });
+
+  canvas.addEventListener("pointermove", event => {
+    if (!pointer.down) return;
+    event.preventDefault();
+    const p = canvasPoint(event);
+    pointer.x = p.x; pointer.y = p.y;
+    if (Math.hypot(pointer.x-pointer.sx, pointer.y-pointer.sy) > 14) {
+      pointer.dragging = true;
+      if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && pointer.sy > 930) {
+        if (pointer.y > 930) {
+          game.launchX = clampLauncherX(pointer.x);
+          game.aimVX = 0;
+        } else {
+          game.aimVX = clamp((pointer.x-game.launchX)*3.2,-430,430);
+        }
+      }
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("pointerup", event => {
+    event.preventDefault();
+    const p = canvasPoint(event);
+    const button = buttons.find(entry => entry.id === pressedButton && entry.enabled && pointIn(entry,p.x,p.y));
+    if (button) {
+      button.action();
+    } else if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal) {
+      const upward = pointer.sy-pointer.y > 28;
+      const tappedTable = pointer.sy > 420 && pointer.sy < 930 && !pointer.dragging;
+      const touchedLauncher = pointer.sy > 930;
+      if (tappedTable) {
+        game.launchX = clampLauncherX(p.x);
+        launchPiece(game.launchX,0);
+      } else if (touchedLauncher && ((pointer.dragging && upward) || !pointer.dragging)) {
+        launchPiece(game.launchX,game.aimVX);
+      }
+    }
+    pointer.down = false;
+    pointer.dragging = false;
+    pressedButton = null;
+  }, { passive: false });
+
+  canvas.addEventListener("pointercancel", () => {
+    pointer.down = false;
+    pointer.dragging = false;
+    pressedButton = null;
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key.toLowerCase() === "f") {
+      if (!document.fullscreenElement) canvas.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    }
+  });
+
+  window.render_game_to_text = () => {
+    const state = {
+      screen,
+      coordinates: "720x1280 logical canvas; origin at top-left; x increases right and y increases down",
+      selectedStation,
+      resources: {
+        coins: save.coins,
+        stars: save.stars,
+        tools: save.tools,
+        reputation: save.reputation,
+        highScore: save.highScore,
+        lifetimeScore: save.lifetimeScore
+      },
+      theme: {
+        selected: save.selectedTheme,
+        name: THEMES[save.selectedTheme].name,
+        gameplayMotion: THEMES[save.selectedTheme].motion,
+        islandFeature: THEMES[save.selectedTheme].islandFeature,
+        itemsThemed: true,
+        tableThemed: true,
+        owned: save.ownedThemes.map((owned,index) => owned ? THEMES[index].name : null).filter(Boolean)
+      },
+      venueCount: STATIONS.length,
+      waterAnimation: {
+        active: false,
+        mode: "static painted island background"
+      },
+      secretSkin: {
+        name: "Jamaican Breeze",
+        unlocked: save.jamaicanUnlocked,
+        owned: !!save.ownedThemes[5]
+      },
+      island: STATIONS.map((station,index) => ({
+        name: station.name,
+        unlocked: save.unlocked[index],
+        level: save.levels[index],
+        shifts: save.shifts[index],
+        served: save.served[index],
+        itemSet: ITEM_NAMES[index].join(" > "),
+        location: {
+          x: mapSite(index).x,
+          y: mapSite(index).y,
+          size: mapSite(index).s
+        }
+      })),
+      modal: modal ? modal.type : null
+    };
+    if (screen === "map") {
+      const gull = seagullPose();
+      state.seagull = {
+        x: Math.round(gull.x),
+        y: Math.round(gull.y),
+        spriteFrame: Math.floor(time * 8) % 8,
+        clickable: true,
+        secretFound: save.jamaicanUnlocked
+      };
+      state.walkers = mapTourists.map((person,index) => {
+        const position = mapPath(person.path,person.t);
+        return {
+          id: index,
+          role: person.worker ? "crew" : "tourist",
+          route: person.path,
+          x: Math.round(position.x),
+          y: Math.round(position.y)
+        };
+      });
+    }
+    if (game) {
+      state.stationGame = {
+        station: STATIONS[game.station].name,
+        physics: "continuous free-positioned circular bodies; no lane snapping",
+        tableEndCenterY: PHYSICS_TOP,
+        pieces: game.pieces.map(piece => ({
+          id: piece.id,
+          tier: piece.tier,
+          name: ITEM_NAMES[game.station][piece.tier],
+          x: Math.round(piece.x),
+          y: Math.round(piece.y),
+          vx: Math.round(piece.vx),
+          vy: Math.round(piece.vy),
+          radius: Math.round(piece.r),
+          bubble: piece.bubble,
+          settled: piece.settled
+        })),
+        currentTier: game.current,
+        nextTier: game.next,
+        launcherX: Math.round(game.launchX),
+        aimVX: Math.round(game.aimVX),
+        ready: game.readyTimer <= 0,
+        moving: game.moving,
+        order: game.order ? {
+          targets: game.order.targets,
+          targetNames: game.order.targets.map(tier => ITEM_NAMES[game.station][tier]),
+          done: game.order.done,
+          value: game.order.value
+        } : null,
+        servingPhase: game.serving ? game.serving.phase : null,
+        shelf: game.shelf.map(item => ({tier:item.tier,name:ITEM_NAMES[game.station][item.tier]})),
+        guests: `${game.ordersThisShift}/${game.goal}`,
+        score: game.score,
+        highScore: save.highScore,
+        newBest: game.newBest,
+        combo: game.combo,
+        shots: game.shots,
+        modifier: STATIONS[game.station].icon,
+        constellationProgress: game.station === 6 ? game.constellation : null,
+        missionDone: game.missionDone,
+        tutorial: game.tutorial
+      };
+    }
+    if (screen === "shop") {
+      state.shop = THEMES.map((theme,index) => ({
+        name: theme.name,
+        cost: theme.cost,
+        owned: save.ownedThemes[index],
+        selected: save.selectedTheme === index,
+        affordable: !theme.secret && save.coins >= theme.cost,
+        secret: !!theme.secret
+      }));
+    }
+    return JSON.stringify(state);
+  };
+
+  window.advanceTime = milliseconds => {
+    const steps = Math.max(1, Math.ceil(milliseconds/16.6667));
+    const dt = milliseconds/1000/steps;
+    for (let i=0;i<steps;i++) update(dt);
+    draw();
+  };
+
+  preload();
+  requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+Game concept
+
+Working title: Tropical Tides: Merge Resort
+
+You inherit a run-down island resort. Players merge ingredients, drinks, food, decorations, and repair materials to complete guest orders and rebuild different areas of the island.
+
+The main fantasy is:
+
+Merge supplies → prepare orders → serve guests → restore the resort → unlock new stories and generators.
+
+Main merge board
+
+Use a board around 8×10 or 9×11 tiles.
+
+Players tap generators to create level-one items:
+
+Generator	Example merge chain
+Fruit Stand	Lime → Orange → Pineapple → Fruit Basket
+Drink Station	Cup → Juice → Smoothie → Tropical Cocktail
+Ice Chest	Ice Cube → Ice Cup → Ice Bucket → Sculpted Ice
+Beach Kitchen	Bread → Sandwich → Lunch Plate → Seafood Feast
+Tool Shed	Nail → Hammer → Toolbox → Repair Kit
+Gift Shop	Shell → Bracelet → Souvenir → Luxury Gift
+
+Generators consume energy, and higher-level generators create better items.
+
+The expanded order system
+
+Instead of orders simply disappearing when completed, give players several ways to fulfill them.
+
+Standard orders
+
+Guests request one or more merged items.
+
+Example:
+
+Level 5 pineapple drink
+Level 3 fruit bowl
+Reward: coins, experience, and renovation stars
+To-go orders
+
+The hanging order tickets from the screenshot could appear above the main board. Players drag completed drinks or meals from the board into the matching ticket.
+
+These orders could have:
+
+Bonus rewards for quick completion
+Several items in sequence
+Special VIP customers
+Combo bonuses for completing multiple tickets together
+Resort tasks
+
+Some items are used for rebuilding rather than serving.
+
+Examples:
+
+Merge tools to repair the beach bar
+Merge plants to restore a tropical garden
+Merge furniture to renovate guest rooms
+Merge diving equipment to reopen the marina
+
+This gives players a reason to build multiple item chains instead of only filling food orders.
+
+A distinctive mechanic: the serving lane
+
+Keep the satisfying drink-serving idea, but integrate it into the board.
+
+At the bottom or side of the board, add a serving lane with three slots. Players place completed items there, and guests collect them in order.
+
+Possible strategy:
+
+Loading three matching orders creates a tip multiplier.
+Serving the wrong item blocks a slot temporarily.
+VIP orders require the correct garnish or presentation.
+Some guests leave special items behind, such as keys, photographs, or mystery boxes.
+
+This would help your game feel different from a standard merge title.
+
+Progression structure
+
+Divide the island into areas:
+
+Beach Juice Shack
+Boardwalk Café
+Tropical Garden
+Surf Shop
+Marina
+Boutique Hotel
+Hidden Lagoon
+Sunset Festival Grounds
+
+Each location introduces a new generator, merge chain, character, and gameplay rule.
+
+For example, opening the marina could unlock fishing supplies and seafood recipes, while the hotel unlocks linens, room-service orders, and furniture restoration.
+
+Story direction
+
+A simple story framework could be:
+
+The player returns to an island once owned by their family. A storm has damaged the resort, guests have stopped visiting, and a large company is trying to purchase the property. By restoring each area, the player uncovers family secrets and reconnects with the island community.
+
+Characters could include:
+
+A competitive neighboring resort owner
+A retired chef with hidden recipes
+A marine biologist protecting the lagoon
+A surfer who helps restore the beach
+A mysterious guest connected to the resort’s past
+Features that expand the genre
+
+To make the game feel deeper without becoming overwhelming:
+
+Recipe discovery: Merge ingredients in unusual combinations to unlock permanent recipes.
+Weather changes: Sunny, rainy, or stormy conditions affect guest orders.
+Board expansion: Repair sections of the resort to unlock additional board tiles.
+Generator upgrades: Let players choose between faster recharge, better drops, or larger storage.
+Character abilities: Certain characters can reduce energy costs or increase tips.
+Seasonal festivals: Limited-time merge chains feed back into the permanent resort.
+Guest reputation: Different guest groups unlock as the resort improves.
+Strong MVP
+
+For the first playable version, keep the scope controlled:
+
+One 8×10 merge board
+Three generators
+Approximately 25–35 items
+Three item chains
+Ten standard orders
+Five to-go orders
+One renovation location
+One short character storyline
+Energy, coins, experience, and storage
+A tutorial lasting under five minutes
+
+The main test is whether merging, clearing space, and delivering items feels satisfying. Story, events, and monetization should come after the core board works.
+
+Important differentiation
+
+Use the screenshot as inspiration for the genre and interaction, but create original:
+
+Art and characters
+Item designs
+User interface
+Sound effects
+Story and setting
+Order-ticket presentation
+Progression and economy
+
+The strongest original hook here is a main merge board combined with a live serving lane and resort restoration system.

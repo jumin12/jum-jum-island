@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: san-sarabel-island
+    runtime: static
+    buildCommand: "true"
+    staticPublishPath: .
+    autoDeployTrigger: commit

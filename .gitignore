@@ -1,0 +1,8 @@
+.qa-web-game/
+.qa-web-game-map/
+output/
+debug.log
+.DS_Store
+Thumbs.db
+node_modules/
+*.log
