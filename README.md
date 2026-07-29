@@ -4,6 +4,8 @@
 
 Play locally by opening `index.html`, or host the folder as a static site.
 
+The canvas scales to fit mobile, desktop browser windows, and fullscreen (`F` key). Item art lives at `art/merge-pieces.png`.
+
 ## Host on Render
 
 This project is a static site (HTML, art, and sounds). No Node build step is required.
