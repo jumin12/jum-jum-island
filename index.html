@@ -106,6 +106,8 @@
     table: "art/table-bg.png",
     items: "art/merge-pieces.png",
     observatoryItems: "art/observatory-items.png",
+    baseUtensils: "art/base-utensils.png",
+    menuIcons: "art/menu-icons.png",
     buildings: "art/buildings.png",
     observatoryBuildings: "art/observatory-buildings.png",
     people: "art/people.png",
@@ -201,6 +203,8 @@
     }
   ];
 
+  const BASE_TIER = -1;
+  const BASE_NAMES = ["Empty Glass","Empty Plate","Empty Pot","Empty Crate","Empty Tray","Empty Shell","Empty Pedestal"];
   const ITEM_NAMES = [
     ["Lime Splash","Orange Cooler","Pineapple Breeze","Berry Shake","Sunset Float","Coconut Special","Blue Lagoon Bowl","Grand Fruit Punch"],
     ["Bread Roll","Club Sandwich","Garden Salad","Island Pasta","Grilled Catch","Lobster Plate","Seafood Feast","Chef's Banquet"],
@@ -220,6 +224,25 @@
     [0.58, 0.96, 1.10, 1.14, 1.24, 1.36, 1.48, 1.68], // hotel
     [0.54, 0.78, 0.66, 0.74, 1.04, 1.26, 1.44, 1.62], // lagoon
     [0.52, 0.84, 1.00, 1.14, 0.92, 1.30, 1.50, 1.70]  // observatory
+  ];
+  const BASE_SIZE_SCALE = [0.48, 0.58, 0.50, 0.62, 0.60, 0.52, 0.56];
+
+  const ACHIEVEMENTS = [
+    { id: "firstServe", name: "First Serve", desc: "Complete your first guest order.", icon: 7, check: s => s.served.reduce((a,b)=>a+b,0) >= 1 },
+    { id: "shiftDone", name: "Shift Hero", desc: "Finish any venue shift.", icon: 1, check: s => s.shifts.reduce((a,b)=>a+b,0) >= 1 },
+    { id: "chain3", name: "Sunny Streak", desc: "Reach a merge chain of ×3.", icon: 15, check: s => Math.max(...s.bestChains,0) >= 3 },
+    { id: "chain6", name: "Combo Captain", desc: "Reach a merge chain of ×6.", icon: 15, check: s => Math.max(...s.bestChains,0) >= 6 },
+    { id: "stars10", name: "Rising Star", desc: "Collect 10 stars.", icon: 1, check: s => s.stars >= 10 },
+    { id: "stars40", name: "Island Glow", desc: "Collect 40 stars.", icon: 1, check: s => s.stars >= 40 },
+    { id: "stars100", name: "Starlight Host", desc: "Collect 100 stars.", icon: 1, check: s => s.stars >= 100 },
+    { id: "unlockCafe", name: "Boardwalk Open", desc: "Unlock the Boardwalk Café.", icon: 0, check: s => !!s.unlocked[1] },
+    { id: "unlockAll", name: "Full Resort", desc: "Unlock every venue.", icon: 3, check: s => s.unlocked.every(Boolean) },
+    { id: "landmark", name: "Landmark Builder", desc: "Upgrade any venue to Level 5.", icon: 2, check: s => s.levels.some(level => level >= 5) },
+    { id: "score5k", name: "High Roller", desc: "Reach a best score of 5,000.", icon: 1, check: s => s.highScore >= 5000 },
+    { id: "score20k", name: "Resort Legend", desc: "Reach a best score of 20,000.", icon: 1, check: s => s.highScore >= 20000 },
+    { id: "merges100", name: "Busy Hands", desc: "Complete 100 merges.", icon: 15, check: s => s.totalMerges >= 100 },
+    { id: "secretBird", name: "Secret Seagull", desc: "Discover the Jamaican Breeze skin.", icon: 12, check: s => !!s.jamaicanUnlocked },
+    { id: "constellation", name: "Sky Mapper", desc: "Trigger a constellation boost.", icon: 14, check: s => !!s.constellationHits }
   ];
 
   const UPGRADE_COSTS = [
@@ -370,7 +393,9 @@
       muted: false,
       welcomed: false,
       tutorial: [false,false,false,false,false,false,false],
-      lastStation: 0
+      lastStation: 0,
+      achievements: {},
+      constellationHits: 0
     };
   }
 
@@ -399,14 +424,38 @@
       merged.unlocked = merged.unlocked.map((value,index) =>
         index === 0 || !!value || merged.stars >= STATIONS[index].unlock
       );
+      merged.achievements = Object.assign({}, base.achievements, raw.achievements || {});
+      merged.constellationHits = Math.max(0, merged.constellationHits|0);
       return merged;
     } catch (_) {
       return base;
     }
   }
 
+  function itemName(station, tier) {
+    if (tier <= BASE_TIER) return BASE_NAMES[station] || "Empty Glass";
+    return ITEM_NAMES[station][tier];
+  }
+
+  function refreshAchievements(announce = false) {
+    let unlockedAny = false;
+    for (const achievement of ACHIEVEMENTS) {
+      if (save.achievements[achievement.id]) continue;
+      if (achievement.check(save)) {
+        save.achievements[achievement.id] = true;
+        unlockedAny = true;
+        if (announce) {
+          toast = { text: `ACHIEVEMENT: ${achievement.name}`, t: 4.2, color: "#f7b52f" };
+          playSound("upgrade", .7, 1.15);
+        }
+      }
+    }
+    if (unlockedAny) persist();
+  }
+
   let save = loadSave();
   let screen = "loading";
+  let shopReturnScreen = "menu";
   let selectedStation = save.lastStation || 0;
   let buttons = [];
   let pressedButton = null;
@@ -479,9 +528,9 @@
         loadingMessage = done < total ? "Growing palms…" : "Opening the island…";
         if (done === total) {
           setupMapPeople();
+          refreshAchievements(false);
           setTimeout(() => {
-            screen = "title";
-            if (save.welcomed) screen = "map";
+            screen = "menu";
           }, 250);
         }
       };
@@ -490,7 +539,7 @@
         done++;
         loadProgress = done / total;
         loadingMessage = "A crate missed the ferry.";
-        if (done === total) screen = "title";
+        if (done === total) screen = "menu";
       };
       image.src = assetUrl(path);
     });
@@ -678,13 +727,17 @@
     ctx.restore();
   }
 
+  function drawMenuIcon(index, x, y, size, alpha = 1) {
+    drawSprite(images.menuIcons, 3, 1, index, 0, x-size/2, y-size/2, size, size, alpha);
+  }
+
   function drawItem(station, tier, x, y, size, alpha = 1, rotation = 0, scale = 1, bubble = false) {
     const theme = THEMES[save.selectedTheme] || THEMES[0];
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
     ctx.scale(scale, scale);
-    drawThemedItemAura(theme,tier,size,alpha);
+    drawThemedItemAura(theme, Math.max(0, tier), size, alpha);
     if (bubble) {
       const pulse = 1 + Math.sin(time * 4 + x) * .035;
       ctx.scale(pulse, pulse);
@@ -697,7 +750,9 @@
     }
     ctx.save();
     ctx.filter = theme.itemFilter;
-    if (station === 6) {
+    if (tier <= BASE_TIER) {
+      drawSprite(images.baseUtensils, 7, 1, station, 0, -size/2, -size/2, size, size, alpha);
+    } else if (station === 6) {
       drawSprite(images.observatoryItems, 4, 2, tier % 4, Math.floor(tier / 4), -size/2, -size/2, size, size, alpha);
     } else {
       drawSprite(images.items, 8, 6, tier, station, -size/2, -size/2, size, size, alpha);
@@ -1163,45 +1218,125 @@
     text(loadingMessage, 360, 790, 22, "#fff8df", "center", 700);
   }
 
-  function drawTitle() {
+  function drawMenuChrome() {
+    const theme = THEMES[save.selectedTheme] || THEMES[0];
+    drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
+    ctx.save();
+    ctx.globalAlpha = pressedButton === "shop" ? .78 : 1;
+    ctx.fillStyle = "#fff9e5";
+    ctx.strokeStyle = theme.dark;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(52,57,32,0,TAU); ctx.fill(); ctx.stroke();
+    drawThemeSprite(save.selectedTheme, 0, 52, 54, 53);
+    rounded(19,78,66,24,12,theme.color,theme.dark,2);
+    text("SHOP",52,90,12,"#fff9e7");
+    ctx.restore();
+    addButton("shop", 16, 22, 74, 82, () => { shopReturnScreen = "menu"; screen = "shop"; });
+  }
+
+  function drawMenu() {
     drawMapBackdrop(true);
-    ctx.fillStyle = "rgba(5,73,83,.18)";
+    ctx.fillStyle = "rgba(5,73,83,.22)";
     ctx.fillRect(0,0,W,H);
-    const bob = Math.sin(time*1.8)*7;
+    drawMenuChrome();
+    const bob = Math.sin(time*1.8)*6;
     ctx.save();
     ctx.translate(0,bob);
-    shadowText("SARABEL", 360, 220, 62, "#fff7c8");
-    shadowText("ISLAND", 360, 294, 96, "#ffd24c");
-    rounded(188, 352, 344, 48, 24, "rgba(38,139,125,.94)", "#fff8df", 4);
-    text("RESTORE THE RESORT", 360, 377, 22, "#fff8df");
+    shadowText("SARABEL", 360, 168, 58, "#fff7c8");
+    shadowText("ISLAND", 360, 238, 88, "#ffd24c");
+    rounded(198, 292, 324, 44, 22, "rgba(38,139,125,.94)", "#fff8df", 4);
+    text("RESTORE THE RESORT", 360, 315, 20, "#fff8df");
     ctx.restore();
-    drawBuilding(0, 5, 360, 585+bob, 330);
-    drawPersonShadow(220, 744+bob, 98, .2);
-    drawAnimatedPerson(0, Math.floor(time*1.4)%2, 220, 742+bob, 104, 172);
-    drawPersonShadow(510, 750+bob, 92, .2);
-    drawAnimatedPerson(1, Math.floor(time*1.4+.7)%2, 510, 748+bob, 96, 160, 1, true);
-    rounded(92, 812, 536, 96, 38, "rgba(255,249,223,.94)", "#6f8f4a", 5);
-    wrapText("Slide. Match. Serve. Restore your island.", 360, 837, 470, 27, 23, "#59392d", "center", 900);
-    drawButton("start", save.welcomed ? "RETURN TO ISLAND" : "OPEN THE RESORT", 122, 948, 476, 90, "#f47d63", () => {
-      beginAudio();
-      screen = "map";
-      if (!save.welcomed) {
-        save.welcomed = true;
-        modal = {
-          type: "story",
-          title: "A FRESH START",
-          body: "The old resort is quiet, but the ferry has arrived. Serve guests, earn stars, and restore every corner of the island.",
-          station: 0
-        };
-        persist();
-      }
-    });
-    drawCircleButton("sound", 654, 70, 34, save.muted ? "×" : "♪", toggleSound);
-    if (save.highScore > 0) {
-      rounded(228, 1056, 264, 52, 26, "rgba(255,249,223,.94)", "#e6ad32", 4);
-      text(`BEST SCORE  ${formatNumber(save.highScore)}`, 360, 1083, 18, "#71472e");
+    drawBuilding(0, 5, 360, 470+bob, 250);
+    drawPersonShadow(230, 598+bob, 80, .18);
+    drawAnimatedPerson(0, Math.floor(time*1.4)%2, 230, 596+bob, 86, 142);
+    drawPersonShadow(500, 602+bob, 76, .18);
+    drawAnimatedPerson(1, Math.floor(time*1.4+.7)%2, 500, 600+bob, 80, 134, 1, true);
+
+    const cards = [
+      { id: "play", label: "PLAY", color: "#f47d63", icon: 0, y: 690, action: () => {
+        beginAudio();
+        screen = "map";
+        if (!save.welcomed) {
+          save.welcomed = true;
+          modal = {
+            type: "story",
+            title: "A FRESH START",
+            body: "Combine empty glasses into drinks, serve guests, and restore every corner of Sarabel Island.",
+            station: 0
+          };
+          persist();
+        }
+      }},
+      { id: "scores", label: "HIGH SCORE", color: "#e6ad32", icon: 1, y: 820, action: () => { screen = "scores"; } },
+      { id: "achievements", label: "ACHIEVEMENTS", color: "#3eb1d0", icon: 2, y: 950, action: () => { screen = "achievements"; } }
+    ];
+    for (const card of cards) {
+      const down = pressedButton === card.id;
+      ctx.save();
+      ctx.translate(0, down ? 3 : 0);
+      rounded(110, card.y, 500, 96, 32, "rgba(255,249,223,.97)", card.color, 5);
+      drawMenuIcon(card.icon, 188, card.y+48, 78);
+      text(card.label, 390, card.y+52, 34, "#59392d", "center", 900);
+      ctx.restore();
+      addButton(card.id, 110, card.y, 500, 96, card.action, true);
     }
-    text("An endless island service adventure", 360, 1130, 20, "#fff8df", "center", 700);
+    rounded(210, 1088, 300, 48, 24, "rgba(255,249,223,.94)", "#e6ad32", 3);
+    text(`BEST  ${formatNumber(save.highScore)}`, 360, 1113, 20, "#71472e");
+    text("Slide. Match. Serve. Forever.", 360, 1188, 18, "#fff8df", "center", 700);
+  }
+
+  function drawScores() {
+    drawMapBackdrop(true);
+    ctx.fillStyle = "rgba(8,60,68,.35)";
+    ctx.fillRect(0,0,W,H);
+    drawMenuChrome();
+    drawCircleButton("scoresBack", 48, 58, 30, "‹", () => { screen = "menu"; });
+    shadowText("HIGH SCORES", 360, 58, 30, "#fff8df");
+    rounded(48, 140, 624, 980, 36, "rgba(255,249,228,.97)", "#e6ad32", 6);
+    drawMenuIcon(1, 360, 220, 110);
+    text("BEST SHIFT SCORE", 360, 300, 18, "#8b6b58");
+    text(formatNumber(save.highScore), 360, 352, 54, "#59392d");
+    text(`Lifetime score  ${formatNumber(save.lifetimeScore)}`, 360, 410, 20, "#7e665a");
+    text("Venue Bests", 360, 458, 22, "#59392d");
+    for (let i = 0; i < STATIONS.length; i++) {
+      const y = 488 + i * 66;
+      rounded(78, y, 564, 56, 18, "#f3ead2", STATIONS[i].color, 3);
+      drawItem(i, 0, 118, y+28, 42);
+      text(STATIONS[i].short, 160, y+20, 15, STATIONS[i].dark, "left", 900);
+      text(`LV ${save.levels[i]}  •  ${save.shifts[i]} shifts`, 160, y+40, 13, "#7e665a", "left", 700);
+      text(formatNumber(save.bestShiftScores[i]), 600, y+30, 20, "#59392d", "right", 900);
+    }
+  }
+
+  function drawAchievements() {
+    drawMapBackdrop(true);
+    ctx.fillStyle = "rgba(8,60,68,.35)";
+    ctx.fillRect(0,0,W,H);
+    drawMenuChrome();
+    drawCircleButton("achBack", 48, 58, 30, "‹", () => { screen = "menu"; });
+    shadowText("ACHIEVEMENTS", 360, 58, 28, "#fff8df");
+    const unlockedCount = ACHIEVEMENTS.filter(entry => save.achievements[entry.id]).length;
+    text(`${unlockedCount} / ${ACHIEVEMENTS.length} unlocked`, 360, 96, 16, "#fff4bf");
+    rounded(36, 128, 648, 1008, 34, "rgba(255,249,228,.97)", "#3eb1d0", 5);
+    for (let i = 0; i < ACHIEVEMENTS.length; i++) {
+      const achievement = ACHIEVEMENTS[i];
+      const unlocked = !!save.achievements[achievement.id];
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = 58 + col * 310;
+      const y = 156 + row * 122;
+      rounded(x, y, 292, 108, 22, unlocked ? "#fff7df" : "#ebe4d4", unlocked ? "#3eb1d0" : "#b7b1a4", 3);
+      ctx.save();
+      ctx.globalAlpha = unlocked ? 1 : .45;
+      drawMenuIcon(2, x+48, y+54, 64);
+      text(achievement.name, x+92, y+34, 17, "#59392d", "left", 900, 180);
+      wrapText(achievement.desc, x+92, y+56, 180, 18, 14, "#7e665a", "left", 700);
+      ctx.restore();
+      if (unlocked) {
+        drawUi(7, x+250, y+28, 34);
+      }
+    }
   }
 
   const SEAGULL_ROUTE = [
@@ -1270,6 +1405,7 @@
       playSound("land", .55, 1.18);
       toast = { text: "Jamaican Breeze is active!", t: 4, color: "#169b62" };
     }
+    refreshAchievements(firstUnlock);
     persist();
   }
 
@@ -1343,12 +1479,13 @@
     const theme = THEMES[save.selectedTheme] || THEMES[0];
     ctx.fillStyle = "rgba(8,91,100,.18)";
     ctx.fillRect(0,0,W,100);
-    shadowText("SARABEL ISLAND", 360, 58, 30, "#fff8df");
+    drawCircleButton("mapMenu", 48, 58, 30, "‹", () => { screen = "menu"; });
+    shadowText("SARABEL ISLAND", 360, 58, 28, "#fff8df");
     text(`7 VENUES  \u2022  BEST ${formatNumber(save.highScore)}`, 360, 88, 15, "#fff4bf", "center", 900);
-    drawPill(0, save.coins, 18, 102, 160);
-    drawPill(1, save.stars, 188, 102, 140);
-    drawPill(2, save.tools, 338, 102, 145);
-    drawPill(3, save.reputation, 493, 102, 207);
+    drawPill(0, save.coins, 18, 112, 160);
+    drawPill(1, save.stars, 188, 112, 140);
+    drawPill(2, save.tools, 338, 112, 145);
+    drawPill(3, save.reputation, 493, 112, 180);
     drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
 
     ctx.save();
@@ -1356,12 +1493,12 @@
     ctx.fillStyle = "#fff9e5";
     ctx.strokeStyle = theme.dark;
     ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(48,57,32,0,TAU); ctx.fill(); ctx.stroke();
-    drawThemeSprite(save.selectedTheme, 0, 48, 54, 53);
-    rounded(15,78,66,24,12,theme.color,theme.dark,2);
-    text("SHOP",48,90,12,"#fff9e7");
+    ctx.beginPath(); ctx.arc(620,57,28,0,TAU); ctx.fill(); ctx.stroke();
+    drawThemeSprite(save.selectedTheme, 0, 620, 54, 46);
+    rounded(592,78,56,22,11,theme.color,theme.dark,2);
+    text("SHOP",620,90,11,"#fff9e7");
     ctx.restore();
-    addButton("shop", 12, 22, 74, 82, () => { screen = "shop"; });
+    addButton("shop", 590, 24, 64, 78, () => { shopReturnScreen = "map"; screen = "shop"; });
 
     const walkers = [...mapTourists].sort((a,b) => mapPath(a.path,a.t).y - mapPath(b.path,b.t).y);
     for (const person of walkers) {
@@ -1503,7 +1640,7 @@
     ctx.fillRect(0,0,W,H);
     ctx.fillStyle = "rgba(18,78,76,.36)";
     ctx.fillRect(0,0,W,140);
-    drawCircleButton("shopback", 48, 60, 32, "‹", () => { screen = "map"; });
+    drawCircleButton("shopback", 48, 60, 32, "‹", () => { screen = shopReturnScreen || "menu"; });
     shadowText("ISLAND STYLE SHOP", 360, 48, 30, "#fff8df");
     text("Dress every building at every upgrade level", 360, 82, 16, "#fff1bf", "center", 800);
     drawPill(0, save.coins, 260, 103, 200);
@@ -1541,37 +1678,36 @@
 
   function randomTier(stationIndex = game ? game.station : selectedStation) {
     const mission = save.shifts[stationIndex];
-    // Early shifts lean hard on starter drinks; higher merge seeds unlock slowly.
-    const weights = [1.85, 0.95, 0, 0, 0, 0, 0, 0];
-    if (mission >= 2) weights[2] = 0.28;
-    if (mission >= 5) { weights[1] = 1.05; weights[2] = 0.42; }
-    if (mission >= 9) { weights[2] = 0.55; weights[3] = 0.22; }
-    if (mission >= 14) { weights[3] = 0.32; weights[4] = 0.12; }
-    if (mission >= 22) { weights[4] = 0.2; weights[5] = 0.08; }
-    if (mission >= 32) { weights[5] = 0.12; weights[6] = 0.05; }
-    // Keep the two earliest drinks the most common on every shift.
-    weights[0] *= 1.35;
-    weights[1] *= 1.15;
+    // Index 0 = empty utensil (BASE_TIER). Guests never order utensils.
+    const weights = [2.8, 0.55, 0.2, 0, 0, 0, 0, 0, 0];
+    if (mission >= 2) { weights[1] = 0.85; weights[2] = 0.35; }
+    if (mission >= 5) { weights[1] = 1.0; weights[2] = 0.5; weights[3] = 0.18; }
+    if (mission >= 9) { weights[2] = 0.55; weights[3] = 0.28; weights[4] = 0.1; }
+    if (mission >= 14) { weights[3] = 0.34; weights[4] = 0.16; }
+    if (mission >= 22) { weights[4] = 0.22; weights[5] = 0.1; }
+    if (mission >= 32) { weights[5] = 0.14; weights[6] = 0.06; }
+    weights[0] *= 1.45;
     let total = 0;
     for (const weight of weights) total += weight;
     let roll = deterministic.next() * total;
-    for (let tier = 0; tier < weights.length; tier++) {
-      roll -= weights[tier];
-      if (roll <= 0) return tier;
+    for (let index = 0; index < weights.length; index++) {
+      roll -= weights[index];
+      if (roll <= 0) return index === 0 ? BASE_TIER : index - 1;
     }
-    return 0;
+    return BASE_TIER;
   }
 
   function makeOrder() {
     const mission = save.shifts[game.station];
-    const maxTier = Math.min(7, 1 + Math.floor(mission / 7) + (save.levels[game.station] > 2 ? 1 : 0));
-    const minTier = Math.min(3, Math.floor(mission / 16));
-    const target = minTier + Math.floor(deterministic.next() * (maxTier-minTier+1));
+    const maxTier = Math.min(7, Math.max(0, Math.floor(mission / 7)) + (save.levels[game.station] > 2 ? 1 : 0));
+    const minTier = 0;
+    const cappedMax = Math.max(0, Math.min(7, maxTier + (mission < 3 ? 0 : 1)));
+    const target = minTier + Math.floor(deterministic.next() * (cappedMax - minTier + 1));
     const twoPiece = game.station === 1 || game.station === 4;
     let second = null;
     if (twoPiece) {
-      second = minTier + Math.floor(deterministic.next() * (maxTier-minTier+1));
-      if (game.station === 4 && second === target) second = Math.min(7, second+1);
+      second = minTier + Math.floor(deterministic.next() * (cappedMax - minTier + 1));
+      if (game.station === 4 && second === target) second = Math.min(7, second + 1);
     }
     game.order = {
       targets: second === null ? [target] : [target, second],
@@ -1590,13 +1726,14 @@
 
   function itemSizeScale(station, tier) {
     const s = Math.max(0, Math.min(ITEM_SIZE_SCALE.length - 1, station|0));
+    if (tier <= BASE_TIER) return BASE_SIZE_SCALE[s] || 0.5;
     const t = Math.max(0, Math.min(7, tier|0));
     return ITEM_SIZE_SCALE[s][t];
   }
 
   function pieceRadius(tier, station = game ? game.station : selectedStation) {
-    // Mid-chain items sit near 36px; shot glasses stay small, punch bowls get big.
-    return clamp(37 * itemSizeScale(station, tier), 18, 60);
+    // Mid-chain items sit near 36px; empty utensils stay smallest.
+    return clamp(37 * itemSizeScale(station, tier), 16, 60);
   }
 
   function itemDisplaySize(station, tier, base = 64, maxSize = 0) {
@@ -1636,6 +1773,7 @@
   function startStation(index) {
     if (!save.unlocked[index]) return;
     toast = null;
+    modal = null;
     selectedStation = index;
     save.lastStation = index;
     const goal = 4 + Math.min(5, Math.floor(save.shifts[index] / 6));
@@ -1676,7 +1814,7 @@
     };
     const seedXs = [235, 318, 408, 486];
     const seedYs = [PHYSICS_TOP+12, PHYSICS_TOP+58, PHYSICS_TOP+30, PHYSICS_TOP+82];
-    const seedTiers = [0, 2, 1, 0];
+    const seedTiers = [BASE_TIER, BASE_TIER, 0, BASE_TIER];
     const count = save.shifts[index] > 8 ? 4 : 3;
     for (let i = 0; i < count; i++) {
       game.pieces.push(createPhysicsPiece(seedTiers[(i + index) % seedTiers.length], seedXs[i], seedYs[i], {
@@ -1842,6 +1980,7 @@
       if (game.constellation >= 3) {
         game.constellation = 0;
         game.modifierFlash = 1;
+        save.constellationHits = (save.constellationHits|0) + 1;
         if (merged.tier < 7) {
           merged.tier++;
           merged.r = pieceRadius(merged.tier, game.station);
@@ -2059,6 +2198,7 @@
     floatText(`ORDER +${reward}`, 470, 300, "#fff4ae", 28);
     game.shelf = [];
     game.serving = null;
+    refreshAchievements(true);
     if (game.ordersThisShift >= game.goal) {
       finishShift();
     } else {
@@ -2079,6 +2219,7 @@
     addScore(2200+game.goal*250+game.maxCombo*180,360,420);
     save.bestShiftScores[game.station] = Math.max(save.bestShiftScores[game.station],game.score);
     updateUnlocks();
+    refreshAchievements(true);
     playSound("upgrade", .75);
     modal = {
       type: "shift",
@@ -2444,12 +2585,11 @@
 
   function drawRecipeStrip() {
     rounded(28, 1158, 664, 103, 34, "rgba(255,250,232,.97)", "#6c9b4c", 5);
-    for (let tier = 0; tier < 8; tier++) {
-      const x = 76 + tier*81;
-      if (tier < 7) {
-        text("›", x+42, 1209, 24, "#9c7048");
-      }
-      drawItem(game.station, tier, x, 1208, itemDisplaySize(game.station, tier, 56, 78));
+    for (let i = 0; i < 9; i++) {
+      const tier = i - 1;
+      const x = 52 + i * 72;
+      if (i < 8) text("›", x+37, 1209, 20, "#9c7048");
+      drawItem(game.station, tier, x, 1208, itemDisplaySize(game.station, tier, 50, 68));
     }
   }
 
@@ -2458,13 +2598,13 @@
     ctx.fillRect(0,0,W,H);
     rounded(62, 376, 596, 420, 36, "rgba(255,249,228,.98)", STATIONS[game.station].color, 6);
     text(STATIONS[game.station].icon, 360, 430, 25, STATIONS[game.station].dark);
-    wrapText(STATIONS[game.station].rule, 360, 470, 500, 31, 21, "#654a40", "center", 700);
-    drawItem(game.station, 0, 205, 643, itemDisplaySize(game.station, 0, 96));
-    drawItem(game.station, 0, 360, 575, itemDisplaySize(game.station, 0, 96));
-    drawItem(game.station, 1, 515, 643, itemDisplaySize(game.station, 1, 102));
+    wrapText("Match two " + (BASE_NAMES[game.station] || "Empty Glass").toLowerCase() + " pieces first. Guests never ask for empties — only finished items.", 360, 468, 500, 28, 19, "#654a40", "center", 700);
+    drawItem(game.station, BASE_TIER, 205, 643, itemDisplaySize(game.station, BASE_TIER, 96));
+    drawItem(game.station, BASE_TIER, 360, 575, itemDisplaySize(game.station, BASE_TIER, 96));
+    drawItem(game.station, 0, 515, 643, itemDisplaySize(game.station, 0, 102));
     shadowText("＋", 282, 630, 37, "#f47d63");
     shadowText("＝", 438, 630, 37, "#55bd78");
-    text("Place it anywhere, flick upward, and match at the first point of contact.", 360, 719, 17, "#786157", "center", 700, 520);
+    text("Place anywhere, flick upward, and match on contact.", 360, 719, 17, "#786157", "center", 700, 520);
     drawButton("tutorial", "START SERVING", 180, 827, 360, 75, STATIONS[game.station].color, () => {
       game.tutorial = false;
       save.tutorial[game.station] = true;
@@ -2525,7 +2665,7 @@
   function update(dt) {
     time += dt;
     updateEffects(dt);
-    if (screen === "map" || screen === "title") {
+    if (screen === "map" || screen === "menu" || screen === "scores" || screen === "achievements") {
       mapPulse += dt;
       for (const person of mapTourists) {
         person.t += person.speed*dt;
@@ -2540,7 +2680,9 @@
     buttons = [];
     ctx.clearRect(0,0,W,H);
     if (screen === "loading") drawLoading();
-    else if (screen === "title") drawTitle();
+    else if (screen === "menu") drawMenu();
+    else if (screen === "scores") drawScores();
+    else if (screen === "achievements") drawAchievements();
     else if (screen === "map") drawMap();
     else if (screen === "shop") drawShop();
     else if (screen === "play" && game) drawPlay();
@@ -2698,7 +2840,7 @@
         level: save.levels[index],
         shifts: save.shifts[index],
         served: save.served[index],
-        itemSet: ITEM_NAMES[index].join(" > "),
+        itemSet: [BASE_NAMES[index], ...ITEM_NAMES[index]].join(" > "),
         location: {
           x: mapSite(index).x,
           y: mapSite(index).y,
@@ -2735,7 +2877,7 @@
         pieces: game.pieces.map(piece => ({
           id: piece.id,
           tier: piece.tier,
-          name: ITEM_NAMES[game.station][piece.tier],
+          name: itemName(game.station, piece.tier),
           x: Math.round(piece.x),
           y: Math.round(piece.y),
           vx: Math.round(piece.vx),
@@ -2747,9 +2889,9 @@
         })),
         currentTier: game.current,
         nextTier: game.next,
-        itemSizes: ITEM_NAMES[game.station].map((_, tier) => ({
+        itemSizes: [BASE_TIER,0,1,2,3,4,5,6,7].map(tier => ({
           tier,
-          name: ITEM_NAMES[game.station][tier],
+          name: itemName(game.station, tier),
           radius: Math.round(pieceRadius(tier, game.station)),
           scale: itemSizeScale(game.station, tier)
         })),
@@ -2759,12 +2901,12 @@
         moving: game.moving,
         order: game.order ? {
           targets: game.order.targets,
-          targetNames: game.order.targets.map(tier => ITEM_NAMES[game.station][tier]),
+          targetNames: game.order.targets.map(tier => itemName(game.station, tier)),
           done: game.order.done,
           value: game.order.value
         } : null,
         servingPhase: game.serving ? game.serving.phase : null,
-        shelf: game.shelf.map(item => ({tier:item.tier,name:ITEM_NAMES[game.station][item.tier]})),
+        shelf: game.shelf.map(item => ({tier:item.tier,name:itemName(game.station,item.tier)})),
         guests: `${game.ordersThisShift}/${game.goal}`,
         score: game.score,
         highScore: save.highScore,
