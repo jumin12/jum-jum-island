@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: san-sarabel-island
+    name: jum-jum-island
     runtime: static
     buildCommand: "true"
     staticPublishPath: .

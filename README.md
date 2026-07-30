@@ -10,12 +10,12 @@ The canvas scales to fit mobile, desktop browser windows, and fullscreen (`F` ke
 
 This project is a static site (HTML, art, and sounds). No Node build step is required.
 
-1. Push this repo to GitHub (already set up as `san-sarabel-island`).
+1. Push this repo to GitHub (already set up as `jum-jum-island`).
 2. Open the [Render Dashboard](https://dashboard.render.com/).
 3. Click **New → Static Site**.
-4. Connect the `san-sarabel-island` GitHub repository.
+4. Connect the `jum-jum-island` GitHub repository.
 5. Use these settings:
-   - **Name:** `san-sarabel-island` (or any name you like)
+   - **Name:** `jum-jum-island` (or any name you like)
    - **Branch:** `main`
    - **Build Command:** leave empty, or use `true`
    - **Publish Directory:** `.`

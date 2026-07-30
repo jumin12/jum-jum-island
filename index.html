@@ -110,6 +110,7 @@
     menuIcons: "art/menu-icons.png",
     powerups: "art/powerups.png",
     juminGuide: "art/jumin-guide.png",
+    juminPoses: "art/jumin-poses.png",
     buildings: "art/buildings.png",
     observatoryBuildings: "art/observatory-buildings.png",
     people: "art/people.png",
@@ -124,9 +125,9 @@
 
   const POWERUPS = [
     { id: "skip", name: "Skip Glass", desc: "Toss the current glass and draw the next one.", cost: 220, color: "#f47d63", icon: 0 },
-    { id: "choose", name: "Any Glass", desc: "Pick exactly which glass to shoot next.", cost: 380, color: "#e6ad32", icon: 2 },
-    { id: "magnet", name: "Berry Magnet", desc: "Your next shot pulls matching bottles hard.", cost: 340, color: "#d45a9a", icon: 3 },
-    { id: "thaw", name: "Sun Thaw", desc: "Melt every frozen bottle on the table.", cost: 300, color: "#3eb1d0", icon: 1 }
+    { id: "choose", name: "Any Glass", desc: "Pick exactly which glass to shoot next.", cost: 380, color: "#e6ad32", icon: 1 },
+    { id: "magnet", name: "Berry Magnet", desc: "Your next shot pulls matching bottles hard.", cost: 340, color: "#d45a9a", icon: 2 },
+    { id: "thaw", name: "Sun Thaw", desc: "Melt every frozen bottle on the table.", cost: 300, color: "#3eb1d0", icon: 3 }
   ];
 
   const STATIONS = [
@@ -497,6 +498,7 @@
   let arcs = [];
   let rings = [];
   let mergeBursts = [];
+  let powerupFx = [];
   let pointer = { down: false, x: 0, y: 0, sx: 0, sy: 0, dragging: false };
 
   const deterministic = {
@@ -749,22 +751,30 @@
     }
     ctx.restore();
     if (frozen) {
-      ctx.fillStyle = "rgba(170,230,255,.34)";
-      ctx.strokeStyle = "rgba(230,250,255,.92)";
+      const shimmer = 0.28 + Math.sin(time * 5 + x * 0.01) * 0.08;
+      ctx.fillStyle = `rgba(170,230,255,${shimmer + 0.12})`;
+      ctx.strokeStyle = "rgba(230,250,255,.95)";
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.arc(0, 0, size * .5, 0, TAU);
       ctx.fill();
       ctx.stroke();
-      for (let i = 0; i < 3; i++) {
-        const a = time * 1.4 + i * 2.1;
-        ctx.strokeStyle = "rgba(255,255,255,.75)";
+      for (let i = 0; i < 4; i++) {
+        const a = time * 1.8 + i * 1.7;
+        ctx.strokeStyle = `rgba(255,255,255,${0.55 + Math.sin(time * 6 + i) * 0.25})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * size * .18, Math.sin(a) * size * .18);
-        ctx.lineTo(Math.cos(a) * size * .38, Math.sin(a) * size * .38);
+        ctx.moveTo(Math.cos(a) * size * .16, Math.sin(a) * size * .16);
+        ctx.lineTo(Math.cos(a) * size * .4, Math.sin(a) * size * .4);
         ctx.stroke();
       }
+      ctx.fillStyle = "rgba(210,245,255,.55)";
+      ctx.beginPath();
+      ctx.moveTo(-size * .18, -size * .22);
+      ctx.lineTo(-size * .08, -size * .34);
+      ctx.lineTo(size * .02, -size * .2);
+      ctx.closePath();
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -773,16 +783,30 @@
     drawSprite(images.powerups, 4, 1, index, 0, x - size / 2, y - size / 2, size, size, alpha);
   }
 
-  function drawJumin(x, y, size = 120) {
-    if (images.juminGuide && images.juminGuide.complete) {
-      const w = size, h = size;
-      ctx.save();
-      ctx.globalAlpha = 1;
-      ctx.drawImage(images.juminGuide, x - w / 2, y - h / 2, w, h);
-      ctx.restore();
+  function drawJumin(x, y, size = 120, pose = 0) {
+    const atlas = images.juminPoses && images.juminPoses.complete ? images.juminPoses : images.juminGuide;
+    if (atlas && atlas.complete) {
+      if (atlas === images.juminPoses) {
+        drawSprite(atlas, 4, 1, pose % 4, 0, x - size / 2, y - size / 2, size, size, 1);
+      } else {
+        ctx.drawImage(atlas, x - size / 2, y - size / 2, size, size);
+      }
     } else {
       drawAnimatedPerson(2, Math.floor(time * 2) % 2, x, y, size * .7, size * 1.15);
     }
+  }
+
+  function spawnPowerupFx(type, x, y, extra = {}) {
+    powerupFx.push({
+      type,
+      x,
+      y,
+      life: extra.life || 1.1,
+      max: extra.life || 1.1,
+      color: extra.color || "#fff8df",
+      radius: extra.radius || 40,
+      target: extra.target || null
+    });
   }
 
   function drawThemeGameplayAmbience() {
@@ -1124,13 +1148,95 @@
         arcs.splice(i, 1);
       }
     }
+    for (let i = powerupFx.length - 1; i >= 0; i--) {
+      powerupFx[i].life -= dt;
+      if (powerupFx[i].life <= 0) powerupFx.splice(i, 1);
+    }
     if (toast) {
       toast.t -= dt;
       if (toast.t <= 0) toast = null;
     }
   }
 
+  function drawPowerupFx() {
+    for (const fx of powerupFx) {
+      const t = 1 - fx.life / fx.max;
+      ctx.save();
+      if (fx.type === "skip") {
+        ctx.globalAlpha = 1 - t;
+        ctx.strokeStyle = "#f47d63";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, 20 + t * 50, -1.2, 1.4);
+        ctx.stroke();
+        ctx.beginPath();
+        const ang = 1.4;
+        const r = 20 + t * 50;
+        ctx.moveTo(fx.x + Math.cos(ang) * r, fx.y + Math.sin(ang) * r);
+        ctx.lineTo(fx.x + Math.cos(ang) * r - 18, fx.y + Math.sin(ang) * r - 16);
+        ctx.lineTo(fx.x + Math.cos(ang) * r - 22, fx.y + Math.sin(ang) * r + 10);
+        ctx.closePath();
+        ctx.fillStyle = "#f47d63";
+        ctx.fill();
+      } else if (fx.type === "choose") {
+        ctx.globalAlpha = (1 - t) * 0.9;
+        ctx.strokeStyle = "#e6ad32";
+        ctx.lineWidth = 5 + Math.sin(time * 12) * 2;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, 28 + t * 36, 0, TAU);
+        ctx.stroke();
+        for (let i = 0; i < 5; i++) {
+          const a = time * 4 + i * TAU / 5;
+          ctx.fillStyle = "#ffe08a";
+          ctx.beginPath();
+          ctx.arc(fx.x + Math.cos(a) * (34 + t * 20), fx.y + Math.sin(a) * (34 + t * 20), 4, 0, TAU);
+          ctx.fill();
+        }
+      } else if (fx.type === "magnet") {
+        const originX = fx.target && game && game.pieces.includes(fx.target) ? fx.target.x : fx.x;
+        const originY = fx.target && game && game.pieces.includes(fx.target) ? fx.target.y : fx.y;
+        const tier = fx.target ? fx.target.tier : fx.tier;
+        ctx.globalAlpha = 0.55 + Math.sin(time * 14) * 0.2;
+        ctx.strokeStyle = "#ff7ec8";
+        ctx.lineWidth = 4;
+        const targets = game ? game.pieces.filter(p => !p.frozen && p.tier === tier && p !== fx.target) : [];
+        for (const other of targets.slice(0, 6)) {
+          ctx.beginPath();
+          ctx.moveTo(originX, originY);
+          const mx = (originX + other.x) / 2 + Math.sin(time * 10 + other.id) * 18;
+          const my = (originY + other.y) / 2;
+          ctx.quadraticCurveTo(mx, my, other.x, other.y);
+          ctx.stroke();
+          ctx.fillStyle = "#ffb0e0";
+          ctx.beginPath();
+          ctx.arc(other.x, other.y, 6 + Math.sin(time * 16 + other.id) * 2, 0, TAU);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(originX, originY, 18 + Math.sin(time * 10) * 4, 0, TAU);
+        ctx.stroke();
+      } else if (fx.type === "thaw") {
+        ctx.globalAlpha = 1 - t;
+        for (let i = 0; i < 10; i++) {
+          const a = i / 10 * TAU + t * 3;
+          const dist = 20 + t * 70;
+          ctx.fillStyle = i % 2 ? "#9ee7ff" : "#fff8df";
+          ctx.beginPath();
+          ctx.arc(fx.x + Math.cos(a) * dist, fx.y + Math.sin(a) * dist - t * 30, 5 - t * 2, 0, TAU);
+          ctx.fill();
+        }
+        ctx.strokeStyle = "#ffd24c";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, 24 + t * 40, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   function drawEffects() {
+    drawPowerupFx();
     for (const ring of rings) {
       const progress = 1-ring.life/ring.max;
       ctx.save();
@@ -1271,7 +1377,7 @@
     text("FAMOUS FOR JUM JUM BERRIES", 360, 315, 18, "#fff8df");
     ctx.restore();
     drawBuilding(0, 5, 360, 470+bob, 250);
-    drawJumin(230, 560+bob, 150);
+    drawJumin(230, 560+bob, 150, Math.floor(time * 0.7) % 2 === 0 ? 0 : 1);
     drawPersonShadow(500, 602+bob, 76, .18);
     drawAnimatedPerson(1, Math.floor(time*1.4+.7)%2, 500, 600+bob, 80, 134, 1, true);
     rounded(168, 640+bob, 184, 34, 17, "rgba(255,249,223,.95)", "#f47d63", 3);
@@ -1701,7 +1807,7 @@
     drawButton("shopThemes", "STYLES", 380, 162, 270, 48, shopTab === "themes" ? "#3eb1d0" : "#8aa89a", () => { shopTab = "themes"; }, true, true);
 
     if (shopTab === "powerups") {
-      drawJumin(120, 280, 100);
+      drawJumin(120, 280, 100, 1);
       rounded(190, 230, 480, 90, 28, "rgba(255,249,228,.95)", "#f47d63", 4);
       wrapText("Stock these before a shift. Jumin also tosses free powerups when you chain merges or finish guests.", 430, 252, 420, 24, 16, "#654a40", "center", 700);
       POWERUPS.forEach((entry, index) => {
@@ -1820,6 +1926,7 @@
       bubble: !!options.bubble,
       frozen: !!options.frozen,
       magnet: !!options.magnet,
+      thawFlash: options.thawFlash || 0,
       scale: options.scale || 1,
       angle: options.angle || 0,
       spin: options.spin || 0,
@@ -1895,6 +2002,9 @@
     game.current = game.next;
     game.next = randomTier(game.station);
     game.aimVX = 0;
+    spawnPowerupFx("skip", 622, 154, { life: 0.9, color: "#f47d63" });
+    burst(622, 154, 18, "#f47d63", "star");
+    addRing(622, 154, "#ffb08a", 36, 0.55);
     floatText("SKIPPED!", 360, 240, "#f47d63", 24);
     toast = { text: "Jumin swapped your glass.", t: 2.8, color: "#f47d63" };
   }
@@ -1914,6 +2024,9 @@
     game.current = tier;
     game.chooseMode = false;
     game.aimVX = 0;
+    spawnPowerupFx("choose", game.launchX, LAUNCH_Y, { life: 1.0, color: "#e6ad32" });
+    burst(game.launchX, LAUNCH_Y, 22, "#e6ad32", "star");
+    addRing(game.launchX, LAUNCH_Y, "#ffe08a", 48, 0.6);
     floatText("CHOSEN!", 360, 240, "#e6ad32", 24);
     toast = { text: "Jumin lined up your pick.", t: 2.8, color: "#e6ad32" };
   }
@@ -1926,6 +2039,9 @@
     }
     game.magnetCharges = (game.magnetCharges|0) + 1;
     game.magnetPulse = 1.4;
+    spawnPowerupFx("magnet", game.launchX, LAUNCH_Y, { life: 1.2, color: "#d45a9a", tier: game.current });
+    burst(game.launchX, LAUNCH_Y, 20, "#ff7ec8", "star");
+    addRing(game.launchX, LAUNCH_Y, "#ff7ec8", 52, 0.7);
     floatText("MAGNET READY!", 360, 240, "#d45a9a", 22);
     toast = { text: "Next shot pulls matching bottles!", t: 3.0, color: "#d45a9a" };
   }
@@ -1943,7 +2059,11 @@
     }
     for (const piece of frozen) {
       piece.frozen = false;
-      burst(piece.x, piece.y, 16, "#9ee7ff", "star");
+      piece.thawFlash = 1;
+      burst(piece.x, piece.y, 22, "#9ee7ff", "star");
+      burst(piece.x, piece.y, 10, "#ffd24c", "star");
+      spawnPowerupFx("thaw", piece.x, piece.y, { life: 1.0, color: "#3eb1d0" });
+      addRing(piece.x, piece.y, "#ffd24c", 40, 0.65);
     }
     floatText("THAWED!", 360, 420, "#3eb1d0", 26);
     toast = { text: `Jumin melted ${frozen.length} icy bottle${frozen.length > 1 ? "s" : ""}!`, t: 3.2, color: "#3eb1d0" };
@@ -2026,6 +2146,7 @@
     arcs = [];
     rings = [];
     mergeBursts = [];
+    powerupFx = [];
     screen = "play";
     persist();
   }
@@ -2071,6 +2192,9 @@
     }));
     if (magnetShot) {
       game.magnetPulse = 1.2;
+      const launched = game.pieces[game.pieces.length - 1];
+      spawnPowerupFx("magnet", game.launchX, LAUNCH_Y, { life: 1.6, color: "#d45a9a", tier, target: launched });
+      burst(game.launchX, LAUNCH_Y, 24, "#ff7ec8", "star");
       floatText("BERRY PULL!", game.launchX, LAUNCH_Y - 50, "#d45a9a", 20);
     }
     if (tier <= BASE_TIER) {
@@ -2283,6 +2407,7 @@
         if (piece.trail.length > 8) piece.trail.shift();
         piece.trailTimer = .036;
       }
+      piece.thawFlash = Math.max(0, (piece.thawFlash || 0) - dt * 1.8);
       piece.vx *= dampingX;
       piece.vy *= dampingY;
       if (piece.magnet && !piece.frozen) {
@@ -2591,15 +2716,52 @@
     drawItem(game.station,piece.tier,0,0,piece.r*2.35,1,piece.angle,piece.scale*(1+piece.fusion*.08),piece.bubble,piece.frozen);
     if (piece.magnet) {
       ctx.save();
-      ctx.globalAlpha = .45 + Math.sin(time * 10) * .15;
+      ctx.globalAlpha = .5 + Math.sin(time * 12) * .2;
       ctx.strokeStyle = "#ff7ec8";
       ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.arc(0, 0, piece.r * 1.25, 0, TAU);
+      ctx.arc(0, 0, piece.r * (1.2 + Math.sin(time * 8) * 0.08), 0, TAU);
+      ctx.stroke();
+      ctx.strokeStyle = "#ffe0f2";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const a = time * 5 + i * TAU / 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, piece.r * 1.45, a, a + 0.7);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (piece.thawFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = piece.thawFlash * 0.7;
+      ctx.strokeStyle = "#ffd24c";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(0, 0, piece.r * (1.1 + (1 - piece.thawFlash) * 0.8), 0, TAU);
       ctx.stroke();
       ctx.restore();
     }
     ctx.restore();
+    if (piece.magnet && game) {
+      ctx.save();
+      ctx.globalAlpha = 0.35 + Math.sin(time * 14) * 0.12;
+      ctx.strokeStyle = "#ff7ec8";
+      ctx.lineWidth = 3;
+      for (const other of game.pieces) {
+        if (other === piece || other.frozen || other.tier !== piece.tier) continue;
+        if (Math.hypot(other.x - piece.x, other.y - piece.y) > 260) continue;
+        ctx.beginPath();
+        ctx.moveTo(piece.x, piece.y);
+        ctx.quadraticCurveTo(
+          (piece.x + other.x) / 2 + Math.sin(time * 9 + other.id) * 16,
+          (piece.y + other.y) / 2,
+          other.x, other.y
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   function drawPlay() {
@@ -2942,7 +3104,8 @@
     ctx.fillStyle = "rgba(10,55,59,.47)";
     ctx.fillRect(0,0,W,H);
     rounded(50, 300, 620, 620, 36, "rgba(255,249,228,.98)", STATIONS[game.station].color, 6);
-    drawJumin(140, 380, 120);
+    const juminPose = (game.tutorialPage|0) === 0 ? 0 : (game.tutorialPage|0) === 1 ? 1 : 3;
+    drawJumin(140, 380, 120, juminPose);
     shadowText("JUMIN", 360, 350, 20, STATIONS[game.station].color);
     text(page.title, 400, 390, 22, "#59392d");
     wrapText(page.body, 400, 430, 420, 28, 18, "#654a40", "center", 700);
@@ -2978,7 +3141,7 @@
       const pageIndex = Math.max(0, Math.min(pages.length - 1, modal.page|0));
       const page = pages[pageIndex];
       rounded(55, 300, 610, 560, 38, "#fff9e7", "#6b9b50", 6);
-      drawJumin(150, 420, 150);
+      drawJumin(150, 420, 150, pageIndex === 0 ? 0 : pageIndex === 1 ? 1 : 2);
       shadowText("JUMIN", 400, 360, 18, "#f47d63");
       shadowText(page.title, 400, 410, 28, "#f47d63");
       wrapText(page.body, 400, 460, 420, 32, 20, "#62473d", "center", 700);
