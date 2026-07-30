@@ -117,18 +117,11 @@
     seagullFlight: "art/seagull-flight.png",
     ui: "art/ui.png"
   };
-  const SOUND_PATHS = {
-    slide: "sounds/slide.wav",
-    land: "sounds/land.wav",
-    merge: "sounds/merge.wav",
-    chain: "sounds/chain.wav",
-    serve: "sounds/serve.wav",
-    coin: "sounds/coin.wav",
-    upgrade: "sounds/upgrade.wav",
-    ocean: "sounds/ocean.wav"
-  };
   const images = {};
-  const sounds = {};
+  const SLING_MAX_PULL = 200;
+  const SLING_MIN_PULL = 42;
+  const SLING_MIN_SPEED = 880;
+  const SLING_MAX_SPEED = 1760;
 
   const STATIONS = [
     {
@@ -138,7 +131,7 @@
       unlock: 0,
       color: "#ff9f43",
       dark: "#b75722",
-      rule: "Drag to any spot and flick upward. Matching drinks merge wherever they physically touch.",
+      rule: "Pull back like a slingshot to set force, then release. Matching drinks merge wherever they physically touch.",
       flavor: "Fresh fruit, sea breeze, and the island's first smiling guests."
     },
     {
@@ -391,7 +384,6 @@
       selectedTheme: 0,
       ownedThemes: [true,false,false,false,false,false],
       jamaicanUnlocked: false,
-      muted: false,
       welcomed: false,
       tutorial: [false,false,false,false,false,false,false],
       lastStation: 0,
@@ -449,7 +441,6 @@
         unlockedAny = true;
         if (announce) {
           toast = { text: `ACHIEVEMENT: ${achievement.name}`, t: 4.2, color: "#f7b52f" };
-          playSound("upgrade", .7, 1.15);
         }
       }
     }
@@ -546,40 +537,6 @@
       };
       image.src = assetUrl(path);
     });
-    Object.entries(SOUND_PATHS).forEach(([key, path]) => {
-      const audio = new Audio(assetUrl(path));
-      audio.preload = key === "ocean" ? "auto" : "metadata";
-      if (key === "ocean") {
-        audio.loop = true;
-        audio.volume = 0.2;
-      }
-      sounds[key] = audio;
-    });
-  }
-
-  function beginAudio() {
-    if (save.muted) return;
-    const ocean = sounds.ocean;
-    if (ocean && ocean.paused) ocean.play().catch(() => {});
-  }
-
-  function playSound(name, volume = 0.75, rate = 1) {
-    if (save.muted || !sounds[name]) return;
-    try {
-      const audio = sounds[name].cloneNode();
-      audio.volume = Math.max(0, Math.min(1, volume));
-      audio.playbackRate = rate;
-      audio.play().catch(() => {});
-    } catch (_) {}
-  }
-
-  function toggleSound() {
-    save.muted = !save.muted;
-    if (sounds.ocean) {
-      if (save.muted) sounds.ocean.pause();
-      else beginAudio();
-    }
-    persist();
   }
 
   function setupMapPeople() {
@@ -1223,7 +1180,6 @@
 
   function drawMenuChrome() {
     const theme = THEMES[save.selectedTheme] || THEMES[0];
-    drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
     ctx.save();
     ctx.globalAlpha = pressedButton === "shop" ? .78 : 1;
     ctx.fillStyle = "#fff9e5";
@@ -1258,7 +1214,6 @@
 
     const cards = [
       { id: "play", label: "PLAY", color: "#f47d63", icon: 0, y: 690, action: () => {
-        beginAudio();
         screen = "map";
         if (!save.welcomed) {
           save.welcomed = true;
@@ -1292,7 +1247,18 @@
   function drawSubmenuHeader(title, backId) {
     drawCircleButton(backId, 48, 58, 32, "‹", () => { screen = "menu"; });
     shadowText(title, 360, 58, 28, "#fff8df");
-    drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
+  }
+
+  function resetProgress() {
+    save = defaultSave();
+    selectedStation = 0;
+    game = null;
+    localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem(LEGACY_SAVE_KEY);
+    persist();
+    toast = { text: "PROGRESS RESET", t: 3.2, color: "#f47d63" };
+    modal = null;
+    screen = "menu";
   }
 
   function drawScores() {
@@ -1323,25 +1289,32 @@
     drawSubmenuHeader("ACHIEVEMENTS", "achBack");
     const unlockedCount = ACHIEVEMENTS.filter(entry => save.achievements[entry.id]).length;
     text(`${unlockedCount} / ${ACHIEVEMENTS.length} unlocked`, 360, 96, 16, "#fff4bf");
-    rounded(36, 128, 648, 1008, 34, "rgba(255,249,228,.97)", "#3eb1d0", 5);
+    rounded(36, 128, 648, 940, 34, "rgba(255,249,228,.97)", "#3eb1d0", 5);
     for (let i = 0; i < ACHIEVEMENTS.length; i++) {
       const achievement = ACHIEVEMENTS[i];
       const unlocked = !!save.achievements[achievement.id];
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = 58 + col * 310;
-      const y = 152 + row * 120;
-      rounded(x, y, 292, 108, 22, unlocked ? "#fff7df" : "#ebe4d4", unlocked ? "#3eb1d0" : "#b7b1a4", 3);
+      const y = 148 + row * 110;
+      rounded(x, y, 292, 100, 22, unlocked ? "#fff7df" : "#ebe4d4", unlocked ? "#3eb1d0" : "#b7b1a4", 3);
       ctx.save();
       ctx.globalAlpha = unlocked ? 1 : .45;
-      drawMenuIcon(2, x+48, y+54, 64);
-      text(achievement.name, x+92, y+34, 17, "#59392d", "left", 900, 180);
-      wrapText(achievement.desc, x+92, y+56, 180, 18, 14, "#7e665a", "left", 700);
+      drawMenuIcon(2, x+48, y+50, 58);
+      text(achievement.name, x+92, y+30, 16, "#59392d", "left", 900, 180);
+      wrapText(achievement.desc, x+92, y+50, 180, 18, 13, "#7e665a", "left", 700);
       ctx.restore();
       if (unlocked) {
-        drawUi(7, x+250, y+28, 34);
+        drawUi(7, x+250, y+26, 32);
       }
     }
+    drawButton("resetProgress", "RESET PROGRESS", 170, 1100, 380, 64, "#f47d63", () => {
+      modal = {
+        type: "resetConfirm",
+        title: "RESET PROGRESS?",
+        body: "This clears coins, unlocks, scores, and achievements on this device. You cannot undo it."
+      };
+    }, true, true);
   }
 
   const SEAGULL_ROUTE = [
@@ -1404,10 +1377,8 @@
     if (firstUnlock) {
       const pose = seagullPose();
       burst(pose.x, pose.y, 58, "#f6c744", "star");
-      playSound("upgrade", .9, 1.08);
       toast = { text: "SECRET FOUND! JAMAICAN BREEZE UNLOCKED", t: 4.5, color: "#169b62" };
     } else {
-      playSound("land", .55, 1.18);
       toast = { text: "Jamaican Breeze is active!", t: 4, color: "#169b62" };
     }
     refreshAchievements(firstUnlock);
@@ -1491,7 +1462,6 @@
     drawPill(1, save.stars, 188, 112, 140);
     drawPill(2, save.tools, 338, 112, 145);
     drawPill(3, save.reputation, 493, 112, 180);
-    drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
 
     ctx.save();
     ctx.globalAlpha = pressedButton === "shop" ? .78 : 1;
@@ -1594,7 +1564,6 @@
     }
     if (save.ownedThemes[index]) {
       save.selectedTheme = index;
-      playSound("land", .55, 1.2);
       toast = { text: theme.name + " is now on the island!", t: 4.5, color: theme.color };
       persist();
       return;
@@ -1603,7 +1572,6 @@
     save.coins -= theme.cost;
     save.ownedThemes[index] = true;
     save.selectedTheme = index;
-    playSound("upgrade", .85, 1.08);
     burst(360, 660, 48, theme.color, "star");
     toast = { text: theme.name + " unlocked!", t: 4.5, color: theme.color };
     persist();
@@ -1674,7 +1642,6 @@
     save.tools -= cost.tools;
     save.levels[index]++;
     save.reputation += 50 * (level + 1);
-    playSound("upgrade", .85);
     const site = mapSite(index);
     burst(site.x, site.y, 42, STATIONS[index].color, "star");
     toast = { text: `${STATIONS[index].name} reached level ${level+1}!`, t: 4.5, color: STATIONS[index].color };
@@ -1782,6 +1749,7 @@
     selectedStation = index;
     save.lastStation = index;
     const goal = 4 + Math.min(5, Math.floor(save.shifts[index] / 6));
+    const maxShots = 14 + goal * 3 + Math.min(6, save.levels[index]);
     game = {
       station: index,
       pieces: [],
@@ -1789,9 +1757,16 @@
       next: randomTier(index),
       launchX: 360,
       aimVX: 0,
+      aimVY: -SLING_MIN_SPEED,
+      aimForce: 0,
+      aimPullX: 0,
+      aimPullY: 0,
+      slingActive: false,
       readyTimer: 0,
       moving: false,
       shots: 0,
+      maxShots,
+      shotsLeft: maxShots,
       combo: 0,
       maxCombo: 0,
       ordersThisShift: 0,
@@ -1836,7 +1811,6 @@
     rings = [];
     mergeBursts = [];
     screen = "play";
-    beginAudio();
     persist();
   }
 
@@ -1853,26 +1827,67 @@
     return clamp(value, bounds.left, bounds.right);
   }
 
-  function launchPiece(launchX = game.launchX, swipeVX = 0) {
+  function computeSling(fromX, fromY) {
+    const dx = fromX - game.launchX;
+    const dy = fromY - LAUNCH_Y;
+    const rawPull = Math.hypot(dx, dy);
+    const pull = Math.min(SLING_MAX_PULL, rawPull);
+    const force = clamp(pull / SLING_MAX_PULL, 0, 1);
+    if (pull < 1) {
+      return { vx: 0, vy: -SLING_MIN_SPEED, force: 0, pull: 0, dx: 0, dy: 0 };
+    }
+    const speed = SLING_MIN_SPEED + (SLING_MAX_SPEED - SLING_MIN_SPEED) * force;
+    const len = Math.hypot(dx, dy) || 1;
+    let vx = (-dx / len) * speed;
+    let vy = (-dy / len) * speed;
+    if (vy > -520) vy = -520 - Math.abs(vx) * 0.12;
+    vx = clamp(vx, -560, 560);
+    vy = clamp(vy, -SLING_MAX_SPEED, -520);
+    return { vx, vy, force, pull, dx, dy };
+  }
+
+  function updateSlingAim(fromX, fromY) {
+    const sling = computeSling(fromX, fromY);
+    game.aimVX = sling.vx;
+    game.aimVY = sling.vy;
+    game.aimForce = sling.force;
+    game.aimPullX = sling.dx;
+    game.aimPullY = sling.dy;
+    game.slingActive = sling.pull >= SLING_MIN_PULL;
+    return sling;
+  }
+
+  function clearSlingAim() {
+    game.aimVX = 0;
+    game.aimVY = -SLING_MIN_SPEED;
+    game.aimForce = 0;
+    game.aimPullX = 0;
+    game.aimPullY = 0;
+    game.slingActive = false;
+  }
+
+  function launchPiece(launchX = game.launchX, vx = 0, vy = -SLING_MIN_SPEED) {
     if (!game || game.readyTimer > 0 || game.serving || game.missionDone || game.tutorial) return;
+    if (game.shotsLeft <= 0) return;
     game.launchX = clampLauncherX(launchX);
-    let vx = clamp(swipeVX, -430, 430);
+    let launchVX = clamp(vx, -560, 560);
+    let launchVY = clamp(vy, -SLING_MAX_SPEED, -520);
     const shotNumber = game.shots + 1;
     if (game.station === 2 && shotNumber % 5 === 0) {
-      vx += game.windDir * 260;
+      launchVX += game.windDir * 260;
       game.modifierFlash = 1;
     }
     if (game.station === 3 && shotNumber % 4 === 0) {
-      vx += game.tideDir * 300;
+      launchVX += game.tideDir * 300;
       for (const piece of game.pieces) piece.vx += game.tideDir * 72;
       game.modifierFlash = 1;
     }
     const tier = game.current;
     game.pieces.push(createPhysicsPiece(tier, game.launchX, LAUNCH_Y, {
-      vx,
-      vy: -1460,
+      vx: launchVX,
+      vy: launchVY,
       bubble: game.station === 5 && deterministic.next() > .72,
-      spin: vx * .0015,
+      spin: launchVX * .0015,
       entered: false
     }));
     if (tier <= BASE_TIER) {
@@ -1880,14 +1895,31 @@
       refreshAchievements(true);
     }
     game.shots++;
+    game.shotsLeft = Math.max(0, game.shotsLeft - 1);
     game.combo = 0;
     game.current = game.next;
     game.next = randomTier(game.station);
     game.readyTimer = .38;
-    game.aimVX = 0;
-    game.cameraShake = Math.min(.28, Math.abs(vx)/2100+.06);
-    playSound("slide", .62, .94 + tier*.025);
+    clearSlingAim();
+    game.cameraShake = Math.min(.28, Math.hypot(launchVX, launchVY)/3200+.06);
     try { navigator.vibrate?.(7); } catch (_) {}
+  }
+
+  function failShift() {
+    if (!game || game.missionDone) return;
+    game.missionDone = true;
+    save.bestShiftScores[game.station] = Math.max(save.bestShiftScores[game.station], game.score);
+    modal = {
+      type: "shiftFail",
+      title: "OUT OF SHOTS!",
+      station: game.station,
+      score: game.score,
+      highScore: save.highScore,
+      guests: game.ordersThisShift,
+      goal: game.goal,
+      newBest: game.newBest
+    };
+    persist();
   }
 
   function addScore(points, x = 360, y = 220) {
@@ -1918,7 +1950,7 @@
     const relativeY = b.vy - a.vy;
     const closing = relativeX*nx + relativeY*ny;
     if (closing < 0) {
-      const impulse = -(1.42) * closing / invSum;
+      const impulse = -(1.52) * closing / invSum;
       a.vx -= impulse * nx * invA;
       a.vy -= impulse * ny * invA;
       b.vx += impulse * nx * invB;
@@ -1927,7 +1959,7 @@
       a.stillTime = b.stillTime = 0;
       const tangentX = -ny, tangentY = nx;
       const tangentSpeed = relativeX*tangentX + relativeY*tangentY;
-      const friction = tangentSpeed * .055;
+      const friction = tangentSpeed * .04;
       a.vx += friction*tangentX*invA;
       a.vy += friction*tangentY*invA;
       b.vx -= friction*tangentX*invB;
@@ -1935,7 +1967,6 @@
       a.impact = Math.max(a.impact, Math.min(1, Math.abs(closing)/600));
       b.impact = Math.max(b.impact, Math.min(1, Math.abs(closing)/600));
       if (Math.abs(closing) > 220) {
-        playSound("land", .26, .9 + deterministic.next()*.14);
         if (a.ringCooldown <= 0 && b.ringCooldown <= 0) {
           addRing((a.x+b.x)/2,(a.y+b.y)/2,STATIONS[game.station].color,Math.min(a.r,b.r)*.82,.3);
           a.ringCooldown = b.ringCooldown = .14;
@@ -1967,7 +1998,6 @@
     game.maxCombo = Math.max(game.maxCombo, game.combo);
     game.shiftMerges++;
     save.totalMerges++;
-    playSound(game.combo > 1 ? "chain" : "merge", .76, 1 + newTier*.025);
     try { navigator.vibrate?.(game.combo > 2 ? [14,22,18] : 18); } catch (_) {}
     mergeBursts.push({ station: game.station, tier: a.tier, x, y, life: .46, max: .46 });
     const themeAccent = (THEMES[save.selectedTheme] || THEMES[0]).accent;
@@ -2000,7 +2030,6 @@
           burst(x,y,38,"#dce4ff","star");
           floatText("CONSTELLATION BOOST!",x,y-92,"#eff2ff",24);
           addScore(600*(merged.tier+1),x,y-120);
-          playSound("chain",.92,1.2);
         } else {
           const celestialBonus = 180;
           save.coins += celestialBonus;
@@ -2038,7 +2067,6 @@
         if (!game || screen !== "play") return;
         game.shelf.push({ tier: piece.tier, x: targetX, targetIndex });
         game.servePop = 1;
-        playSound("serve", .7, 1 + piece.tier*.02);
         burst(targetX, 350, 22, "#ffd35b", "coin");
         addRing(targetX,350,"#fff2a8",38,.48);
         if (game.order.done.every(Boolean)) beginGuestPickup();
@@ -2049,8 +2077,8 @@
   }
 
   function physicsStep(dt) {
-    const dampingX = Math.exp(-2.05*dt);
-    const dampingY = Math.exp(-1.85*dt);
+    const dampingX = Math.exp(-1.62*dt);
+    const dampingY = Math.exp(-1.48*dt);
     for (const piece of game.pieces) {
       piece.age += dt;
       piece.mergeCooldown = Math.max(0, piece.mergeCooldown-dt);
@@ -2080,32 +2108,32 @@
       if (piece.y < PHYSICS_TOP) {
         piece.y = PHYSICS_TOP;
         if (piece.vy < 0) {
-          piece.vy *= -.24;
+          piece.vy *= -.36;
           piece.impact = Math.max(piece.impact,.5);
           piece.settled = false;
           piece.stillTime = 0;
         }
-        piece.vx *= .82;
+        piece.vx *= .9;
       }
       const boundedY = clamp(piece.y, 390, 1000);
       const left = laneBoundaryX(0, boundedY) + piece.r + 5;
       const right = laneBoundaryX(4, boundedY) - piece.r - 5;
       if (piece.x < left) {
         piece.x = left;
-        if (piece.vx < 0) piece.vx *= -.4;
+        if (piece.vx < 0) piece.vx *= -.55;
       } else if (piece.x > right) {
         piece.x = right;
-        if (piece.vx > 0) piece.vx *= -.4;
+        if (piece.vx > 0) piece.vx *= -.55;
       }
       if (piece.y > 1080) {
         piece.y = 1080;
-        if (piece.vy > 0) piece.vy *= -.22;
+        if (piece.vy > 0) piece.vy *= -.34;
       }
       if (piece.y < 920 || piece.age > .9) piece.entered = true;
       const postSpeed = Math.hypot(piece.vx,piece.vy);
-      if (postSpeed < 18) {
+      if (postSpeed < 14) {
         piece.stillTime += dt;
-        if (piece.stillTime > .12) {
+        if (piece.stillTime > .18) {
           piece.vx = 0;
           piece.vy = 0;
           piece.spin = 0;
@@ -2137,7 +2165,6 @@
                 b.bubble = false;
                 a.popCooldown = b.popCooldown = .28;
                 game.modifierFlash = 1;
-                playSound("land", .6, 1.35);
                 burst((a.x+b.x)/2, (a.y+b.y)/2, 20, "#8beeff");
                 addRing((a.x+b.x)/2,(a.y+b.y)/2,"#bffcff",52,.5);
                 floatText("BUBBLE POP!", (a.x+b.x)/2, (a.y+b.y)/2-42, "#d8ffff", 22);
@@ -2176,7 +2203,6 @@
     game.combo = 0;
     game.score = Math.max(0,game.score-100);
     save.coins = Math.max(0, save.coins-20);
-    playSound("land", .65, .72);
     burst(lost.x, Math.min(995,lost.y), 20, "#ef715f");
     floatText("OVER THE LINE  −20", lost.x, Math.min(940,lost.y-30), "#ffe0d8", 21);
   }
@@ -2201,7 +2227,6 @@
     game.shiftCoins += reward;
     game.ordersThisShift++;
     addScore(reward*2+350,570,296);
-    playSound("coin", .75);
     burst(570, 305, 34, "#ffd34f", "coin");
     burst(590, 330, 16, "#ff7e91", "heart");
     floatText(`ORDER +${reward}`, 470, 300, "#fff4ae", 28);
@@ -2229,7 +2254,6 @@
     save.bestShiftScores[game.station] = Math.max(save.bestShiftScores[game.station],game.score);
     updateUnlocks();
     refreshAchievements(true);
-    playSound("upgrade", .75);
     modal = {
       type: "shift",
       title: "SHIFT COMPLETE!",
@@ -2267,7 +2291,6 @@
       } else if (game.serving.phase === "collect" && game.serving.t > .72) {
         game.serving.phase = "cheer";
         game.serving.t = 0;
-        playSound("serve",.8,1.12);
         burst(610,285,20,"#ff8e9c","heart");
         addRing(610,330,"#fff0a2",44,.55);
         game.shelf = [];
@@ -2281,16 +2304,26 @@
     game.overflowFlash = Math.max(0, game.overflowFlash-dt*2.5);
     game.modifierFlash = Math.max(0, game.modifierFlash-dt*2.3);
     game.hintT += dt;
+    if (
+      !game.missionDone &&
+      !game.serving &&
+      !game.tutorial &&
+      !modal &&
+      game.shotsLeft <= 0 &&
+      game.readyTimer <= 0 &&
+      game.pieces.every(piece => piece.settled || Math.hypot(piece.vx, piece.vy) < 20)
+    ) {
+      failShift();
+    }
   }
 
   function predictAimPath() {
     const radius = pieceRadius(game.current, game.station);
     let x = game.launchX;
     let y = LAUNCH_Y-8;
-    const directionX = clamp(game.aimVX/1320, -.34, .34);
-    const length = Math.sqrt(1+directionX*directionX);
-    const dx = directionX/length*10;
-    const dy = -1/length*10;
+    const speed = Math.max(1, Math.hypot(game.aimVX, game.aimVY));
+    const dx = (game.aimVX / speed) * 10;
+    const dy = (game.aimVY / speed) * 10;
     const points = [{x,y}];
     for (let step = 0; step < 90; step++) {
       x += dx;
@@ -2370,31 +2403,55 @@
     const sortedPieces = [...game.pieces].sort((a,b) => a.y-b.y || a.id-b.id);
     for (const piece of sortedPieces) drawPhysicsPiece(piece);
 
-    if (game.readyTimer <= 0 && !game.serving && !game.missionDone) {
+    if (game.readyTimer <= 0 && !game.serving && !game.missionDone && game.shotsLeft > 0) {
       const bob = Math.sin(time*5)*4;
-      const path = predictAimPath();
-      ctx.save();
-      ctx.setLineDash([9,11]);
-      ctx.lineDashOffset = -time*34;
-      ctx.strokeStyle = "rgba(255,255,242,.78)";
-      ctx.lineWidth = 5;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      path.forEach((point,index) => index ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y));
-      ctx.stroke();
-      const end = path[path.length-1];
-      ctx.setLineDash([]);
-      ctx.strokeStyle = station.color;
-      ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(end.x,end.y,10+Math.sin(time*5)*2,0,TAU); ctx.stroke();
-      ctx.restore();
-      const hold = pointer.down && pointer.sy > 930 ? 1.08 : 1;
-      const glow = ctx.createRadialGradient(game.launchX,LAUNCH_Y+bob,8,game.launchX,LAUNCH_Y+bob,62);
+      const pulling = pointer.down && pointer.sy > 900 && (pointer.dragging || game.aimForce > 0);
+      const pullScale = pulling ? Math.min(1, Math.hypot(game.aimPullX, game.aimPullY) / SLING_MAX_PULL) : 0;
+      const holdX = game.launchX + game.aimPullX * 0.42;
+      const holdY = LAUNCH_Y + bob + game.aimPullY * 0.42;
+      if (pulling && pullScale > 0.05) {
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,244,196,${0.35 + game.aimForce * 0.45})`;
+        ctx.lineWidth = 4 + game.aimForce * 4;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(game.launchX - 18, LAUNCH_Y + 8);
+        ctx.lineTo(holdX, holdY);
+        ctx.moveTo(game.launchX + 18, LAUNCH_Y + 8);
+        ctx.lineTo(holdX, holdY);
+        ctx.stroke();
+        rounded(game.launchX - 54, LAUNCH_Y + 48, 108, 18, 9, "rgba(20,60,64,.55)", null);
+        rounded(game.launchX - 50, LAUNCH_Y + 51, 100 * game.aimForce, 12, 6, station.color, null);
+        text(game.slingActive ? "RELEASE!" : "PULL", game.launchX, LAUNCH_Y + 78, 14, "#fff8df");
+        ctx.restore();
+      }
+      if (game.slingActive || game.aimForce > 0.12) {
+        const path = predictAimPath();
+        ctx.save();
+        ctx.setLineDash([9,11]);
+        ctx.lineDashOffset = -time*34;
+        ctx.strokeStyle = `rgba(255,255,242,${0.45 + game.aimForce * 0.4})`;
+        ctx.lineWidth = 4 + game.aimForce * 3;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        path.forEach((point,index) => index ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y));
+        ctx.stroke();
+        const end = path[path.length-1];
+        ctx.setLineDash([]);
+        ctx.strokeStyle = station.color;
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(end.x,end.y,10+Math.sin(time*5)*2,0,TAU); ctx.stroke();
+        ctx.restore();
+      }
+      const hold = pulling ? 1.05 + game.aimForce * 0.12 : 1;
+      const glow = ctx.createRadialGradient(holdX,holdY,8,holdX,holdY,62);
       glow.addColorStop(0,station.color+"66");
       glow.addColorStop(1,"rgba(255,255,255,0)");
       ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(game.launchX,LAUNCH_Y+bob,62,0,TAU); ctx.fill();
-      drawItem(game.station,game.current,game.launchX,LAUNCH_Y+bob,pieceRadius(game.current, game.station)*2.45,1,game.aimVX*.00016,hold,false);
+      ctx.beginPath(); ctx.arc(holdX,holdY,62,0,TAU); ctx.fill();
+      drawItem(game.station,game.current,holdX,holdY,pieceRadius(game.current, game.station)*2.45,1,game.aimVX*.00016,hold,false);
+    } else if (game.shotsLeft <= 0 && !game.missionDone) {
+      text("NO SHOTS LEFT", 360, LAUNCH_Y, 22, "#fff0d8");
     }
 
     drawRecipeStrip();
@@ -2427,16 +2484,19 @@
     ctx.scale(scoreScale,scoreScale);
     text(`SCORE ${formatNumber(game.score)}  •  BEST ${formatNumber(save.highScore)}`, 0, 0, 13, game.newBest ? "#b06b22" : "#7a584a", "center", 900, 260);
     ctx.restore();
-    drawCircleButton("sound", 670, 62, 30, save.muted ? "×" : "♪", toggleSound);
-    rounded(38, 126, 220, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
-    text(`GUESTS  ${game.ordersThisShift}/${game.goal}`, 148, 155, 19, "#59392d");
-    rounded(268, 139, 186, 36, 18, "rgba(21,75,77,.66)", null);
+    rounded(38, 126, 200, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
+    text(`GUESTS  ${game.ordersThisShift}/${game.goal}`, 138, 155, 18, "#59392d");
+    rounded(250, 139, 150, 36, 18, "rgba(21,75,77,.66)", null);
     const progress = game.ordersThisShift/game.goal;
-    rounded(272, 143, 178*progress, 28, 14, station.color, null);
-    text(`${Math.round(progress*100)}%`, 361, 157, 15, "#fff8df");
-    rounded(470, 126, 210, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
-    text(`NEXT`, 500, 154, 15, "#7b5b4e", "left");
-    drawItem(game.station, game.next, 622, 154, itemDisplaySize(game.station, game.next, 52));
+    rounded(254, 143, 142*progress, 28, 14, station.color, null);
+    text(`${Math.round(progress*100)}%`, 325, 157, 14, "#fff8df");
+    const shotsColor = game.shotsLeft <= 3 ? "#f47d63" : station.color;
+    rounded(414, 126, 130, 58, 25, "rgba(255,248,223,.94)", shotsColor, 4);
+    text(`SHOTS`, 479, 145, 13, "#7b5b4e");
+    text(String(game.shotsLeft), 479, 168, 22, game.shotsLeft <= 3 ? "#c44a36" : "#59392d");
+    rounded(556, 126, 126, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
+    text(`NEXT`, 578, 154, 13, "#7b5b4e", "left");
+    drawItem(game.station, game.next, 648, 154, itemDisplaySize(game.station, game.next, 46));
   }
 
   function drawPhysicsGuides() {
@@ -2613,7 +2673,7 @@
     drawItem(game.station, 0, 515, 643, itemDisplaySize(game.station, 0, 102));
     shadowText("＋", 282, 630, 37, "#f47d63");
     shadowText("＝", 438, 630, 37, "#55bd78");
-    text("Place anywhere, flick upward, and match on contact.", 360, 719, 17, "#786157", "center", 700, 520);
+    text("Pull back like a slingshot to set force, then release.", 360, 719, 17, "#786157", "center", 700, 520);
     drawButton("tutorial", "START SERVING", 180, 827, 360, 75, STATIONS[game.station].color, () => {
       game.tutorial = false;
       save.tutorial[game.station] = true;
@@ -2668,6 +2728,31 @@
         screen = "map";
       }, true, true);
       text("Shifts continue forever and rewards grow with your resort.", 360, 916, 16, "#80685b", "center", 700, 525);
+    } else if (modal.type === "shiftFail") {
+      const station = STATIONS[modal.station];
+      rounded(48, 340, 624, 520, 40, "#fff9e7", "#f47d63", 7);
+      shadowText(modal.title, 360, 420, 36, "#f47d63");
+      text(station.name, 360, 468, 20, "#765c4e");
+      text(`Guests served  ${modal.guests}/${modal.goal}`, 360, 520, 22, "#59392d");
+      text(`Score  ${formatNumber(modal.score)}`, 360, 568, 26, "#59392d");
+      text(`Best  ${formatNumber(modal.highScore)}`, 360, 610, 18, "#8b6b58");
+      wrapText("You ran out of shots before finishing every guest. Try a stronger slingshot pull and smarter merges.", 360, 660, 500, 28, 18, "#80685b", "center", 700);
+      drawButton("retryFail", "TRY AGAIN", 102, 740, 244, 70, station.color, () => {
+        const index = modal.station;
+        modal = null;
+        startStation(index);
+      }, true, true);
+      drawButton("islandFail", "VISIT ISLAND", 374, 740, 244, 70, "#55bd78", () => {
+        modal = null;
+        game = null;
+        screen = "map";
+      }, true, true);
+    } else if (modal.type === "resetConfirm") {
+      rounded(70, 390, 580, 420, 38, "#fff9e7", "#f47d63", 7);
+      shadowText(modal.title, 360, 470, 32, "#f47d63");
+      wrapText(modal.body, 360, 530, 480, 30, 20, "#62473d", "center", 700);
+      drawButton("resetYes", "YES, RESET", 110, 660, 230, 70, "#f47d63", () => resetProgress(), true, true);
+      drawButton("resetNo", "CANCEL", 380, 660, 230, 70, "#55bd78", () => { modal = null; }, true, true);
     }
   }
 
@@ -2717,7 +2802,6 @@
 
   canvas.addEventListener("pointerdown", event => {
     event.preventDefault();
-    beginAudio();
     const p = canvasPoint(event);
     pointer.down = true;
     pointer.x = pointer.sx = p.x;
@@ -2730,9 +2814,9 @@
         break;
       }
     }
-    if (!pressedButton && screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && p.y > 930) {
+    if (!pressedButton && screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0 && p.y > 900) {
       game.launchX = clampLauncherX(p.x);
-      game.aimVX = 0;
+      clearSlingAim();
     }
     try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
   }, { passive: false });
@@ -2742,15 +2826,13 @@
     event.preventDefault();
     const p = canvasPoint(event);
     pointer.x = p.x; pointer.y = p.y;
-    if (Math.hypot(pointer.x-pointer.sx, pointer.y-pointer.sy) > 14) {
+    if (Math.hypot(pointer.x-pointer.sx, pointer.y-pointer.sy) > 10) {
       pointer.dragging = true;
-      if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && pointer.sy > 930) {
-        if (pointer.y > 930) {
+      if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0 && pointer.sy > 900) {
+        if (Math.hypot(pointer.x - game.launchX, pointer.y - LAUNCH_Y) < 36 && pointer.y > 980) {
           game.launchX = clampLauncherX(pointer.x);
-          game.aimVX = 0;
-        } else {
-          game.aimVX = clamp((pointer.x-game.launchX)*3.2,-430,430);
         }
+        updateSlingAim(pointer.x, pointer.y);
       }
     }
   }, { passive: false });
@@ -2761,16 +2843,19 @@
     const button = buttons.find(entry => entry.id === pressedButton && entry.enabled && pointIn(entry,p.x,p.y));
     if (button) {
       button.action();
-    } else if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal) {
-      const upward = pointer.sy-pointer.y > 28;
-      const tappedTable = pointer.sy > 420 && pointer.sy < 930 && !pointer.dragging;
-      const touchedLauncher = pointer.sy > 930;
-      if (tappedTable) {
-        game.launchX = clampLauncherX(p.x);
-        launchPiece(game.launchX,0);
-      } else if (touchedLauncher && ((pointer.dragging && upward) || !pointer.dragging)) {
-        launchPiece(game.launchX,game.aimVX);
+    } else if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0) {
+      if (pointer.sy > 900 && pointer.dragging) {
+        const sling = updateSlingAim(pointer.x, pointer.y);
+        if (sling.pull >= SLING_MIN_PULL) {
+          launchPiece(game.launchX, sling.vx, sling.vy);
+        } else {
+          clearSlingAim();
+        }
+      } else if (game) {
+        clearSlingAim();
       }
+    } else if (game) {
+      clearSlingAim();
     }
     pointer.down = false;
     pointer.dragging = false;
@@ -2778,6 +2863,7 @@
   }, { passive: false });
 
   canvas.addEventListener("pointercancel", () => {
+    if (game) clearSlingAim();
     pointer.down = false;
     pointer.dragging = false;
     pressedButton = null;
