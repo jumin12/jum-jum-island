@@ -786,7 +786,9 @@
     ctx.restore();
   }
 
-  function drawJumin(x, y, size = 120, pose = 0) {
+  const JUMIN_PORTRAIT = 148;
+
+  function drawJumin(x, y, size = JUMIN_PORTRAIT, pose = 0) {
     const atlas = images.juminPoses && images.juminPoses.complete ? images.juminPoses : images.juminGuide;
     if (atlas && atlas.complete) {
       if (atlas === images.juminPoses) {
@@ -797,6 +799,134 @@
     } else {
       drawAnimatedPerson(2, Math.floor(time * 2) % 2, x, y, size * .7, size * 1.15);
     }
+  }
+
+  function drawJuminPortrait(x, y, size = JUMIN_PORTRAIT, pose = 0, accent = "#6b9b50") {
+    const well = size + 18;
+    rounded(x - well / 2, y - well / 2, well, well, 28, "#fff4d8", accent, 3);
+    drawJumin(x, y + 2, size, pose);
+  }
+
+  function helpPages() {
+    return [
+      {
+        title: "WELCOME ABOARD",
+        body: "I'm Jumin! Jum Jum Island is famous for jum jum berries. Slide matching bottles, serve guests, and reopen every venue.",
+        pose: 0,
+        art: "welcome"
+      },
+      {
+        title: "EMPTY TO REAL",
+        body: "Empty utensils merge into real drinks first. Matching finished bottles climb the recipe chain from left to right.",
+        pose: 1,
+        art: "merge"
+      },
+      {
+        title: "LAUNCH & SHOTS",
+        body: "Tap the table or slide up from the bottom to launch. Each shift has limited shots — plan merges before you fire.",
+        pose: 1,
+        art: "launch"
+      },
+      {
+        title: "SERVE GUESTS",
+        body: "Guests only order finished drinks, never empties. Fill their order bar to complete the shift and earn stars.",
+        pose: 2,
+        art: "serve"
+      },
+      {
+        title: "FROZEN BOTTLES",
+        body: "Icy bottles can't match until thawed. Use Sun Thaw or wait for a free powerup from Jumin during a hot streak.",
+        pose: 3,
+        art: "frozen"
+      },
+      {
+        title: "POWERUPS",
+        body: "Skip, Any Glass, Berry Magnet, and Sun Thaw sit on the sides while you play. Glowing icons have uses left; grey means empty.",
+        pose: 1,
+        art: "powerups"
+      },
+      {
+        title: "ISLAND & SHOP",
+        body: "Stars unlock venues. Tools upgrade buildings. Visit Jumin's shop for powerups and styles that dress the whole island.",
+        pose: 0,
+        art: "island"
+      }
+    ];
+  }
+
+  function drawHelpArt(kind, cx, cy) {
+    if (kind === "welcome") {
+      drawBuilding(0, Math.max(0, save.levels[0]|0), cx, cy + 10, 150, 1, false);
+    } else if (kind === "merge") {
+      drawItem(0, BASE_TIER, cx - 150, cy + 10, itemDisplaySize(0, BASE_TIER, 78));
+      drawItem(0, BASE_TIER, cx - 20, cy - 36, itemDisplaySize(0, BASE_TIER, 78));
+      drawItem(0, 0, cx + 140, cy + 10, itemDisplaySize(0, 0, 86));
+      shadowText("＋", cx - 85, cy, 30, "#f47d63");
+      shadowText("＝", cx + 55, cy, 30, "#55bd78");
+    } else if (kind === "launch") {
+      rounded(cx - 170, cy - 20, 340, 90, 28, "rgba(255,244,210,.95)", "#3eb1d0", 3);
+      drawItem(0, 1, cx, cy - 40, itemDisplaySize(0, 1, 70));
+      text("TAP  or  SLIDE UP", cx, cy + 42, 18, "#654a40");
+      text("Limited shots each shift", cx, cy + 68, 15, "#8b6b58");
+    } else if (kind === "serve") {
+      rounded(cx - 180, cy - 50, 360, 120, 28, "rgba(255,244,210,.95)", "#f47d63", 3);
+      drawItem(0, 2, cx - 90, cy - 8, itemDisplaySize(0, 2, 64));
+      drawItem(0, 3, cx + 20, cy - 8, itemDisplaySize(0, 3, 64));
+      drawUi(7, cx + 120, cy - 8, 54);
+      text("Guest orders want finished drinks", cx, cy + 52, 15, "#8b6b58");
+    } else if (kind === "frozen") {
+      drawItem(0, 2, cx - 70, cy, itemDisplaySize(0, 2, 88), 1, 0, 1, false, true);
+      drawPowerupIcon(3, cx + 90, cy, 92);
+      shadowText("THAW", cx + 90, cy + 70, 18, "#3eb1d0");
+    } else if (kind === "powerups") {
+      for (let i = 0; i < 4; i++) {
+        const x = cx - 165 + i * 110;
+        ctx.beginPath();
+        ctx.arc(x, cy, 40, 0, TAU);
+        ctx.fillStyle = "rgba(255,248,223,.96)";
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = POWERUPS[i].color;
+        ctx.stroke();
+        drawPowerupIcon(i, x, cy, 64);
+        text(POWERUPS[i].name.split(" ")[0].toUpperCase(), x, cy + 58, 12, "#7b5b4e");
+      }
+    } else if (kind === "island") {
+      for (let i = 0; i < 4; i++) {
+        drawBuilding(i, Math.max(0, save.levels[i]|0), cx - 150 + i * 100, cy + 8, 78, 1, false);
+      }
+      text("Unlock • Upgrade • Restyle", cx, cy + 70, 15, "#8b6b58");
+    }
+  }
+
+  function drawJuminGuidePanel(options) {
+    const {
+      title,
+      body,
+      pose = 0,
+      accent = "#6b9b50",
+      pageIndex = 0,
+      pageCount = 1,
+      art = null,
+      buttonId = "guideNext",
+      buttonLabel = "NEXT",
+      onButton = () => {},
+      stationName = null
+    } = options;
+    const panelX = 48;
+    const panelY = 220;
+    const panelW = 624;
+    const panelH = 780;
+    rounded(panelX, panelY, panelW, panelH, 36, "rgba(255,249,228,.985)", accent, 6);
+    drawJuminPortrait(panelX + 118, panelY + 118, JUMIN_PORTRAIT, pose, accent);
+    shadowText("JUMIN", panelX + 230, panelY + 58, 18, accent, "left");
+    if (stationName) text(stationName, panelX + 230, panelY + 86, 15, "#8b6b58", "left", 700, 340);
+    text(title, panelX + 230, panelY + (stationName ? 118 : 100), 24, "#59392d", "left", 900, 360);
+    wrapText(body, panelX + 230, panelY + (stationName ? 156 : 138), 360, 24, 17, "#654a40", "left", 700);
+    rounded(panelX + 36, panelY + 250, panelW - 72, 340, 28, "#fff4d8", accent, 3);
+    if (art) drawHelpArt(art, panelX + panelW / 2, panelY + 400);
+    text(`${pageIndex + 1} / ${pageCount}`, 360, panelY + 640, 16, "#8b6b58");
+    drawButton(buttonId, buttonLabel, 180, panelY + 670, 360, 70, accent, onButton, true, true);
   }
 
   function spawnPowerupFx(type, x, y, extra = {}) {
@@ -1351,6 +1481,10 @@
     text(loadingMessage, 360, 790, 22, "#fff8df", "center", 700);
   }
 
+  function openHelp() {
+    modal = { type: "help", page: 0 };
+  }
+
   function drawMenuChrome() {
     const theme = THEMES[save.selectedTheme] || THEMES[0];
     ctx.save();
@@ -1364,6 +1498,18 @@
     text("SHOP",52,90,12,"#fff9e7");
     ctx.restore();
     addButton("shop", 16, 22, 74, 82, () => { shopReturnScreen = "menu"; screen = "shop"; });
+
+    ctx.save();
+    ctx.globalAlpha = pressedButton === "help" ? .78 : 1;
+    ctx.fillStyle = "#fff9e5";
+    ctx.strokeStyle = "#3eb1d0";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(668,57,32,0,TAU); ctx.fill(); ctx.stroke();
+    text("?", 668, 62, 34, "#3eb1d0");
+    rounded(635,78,66,24,12,"#3eb1d0","#246f84",2);
+    text("HELP",668,90,12,"#fff9e7");
+    ctx.restore();
+    addButton("help", 630, 22, 74, 82, openHelp);
   }
 
   function drawMenuIsland() {
@@ -1822,9 +1968,9 @@
     drawButton("shopThemes", "STYLES", 380, 162, 270, 48, shopTab === "themes" ? "#3eb1d0" : "#8aa89a", () => { shopTab = "themes"; }, true, true);
 
     if (shopTab === "powerups") {
-      drawJumin(120, 280, 100, 1);
-      rounded(190, 230, 480, 90, 28, "rgba(255,249,228,.95)", "#f47d63", 4);
-      wrapText("Stock these before a shift. Jumin also tosses free powerups when you chain merges or finish guests.", 430, 252, 420, 24, 16, "#654a40", "center", 700);
+      drawJuminPortrait(104, 286, 112, 1, "#f47d63");
+      rounded(180, 230, 490, 96, 28, "rgba(255,249,228,.95)", "#f47d63", 4);
+      wrapText("Stock these before a shift. Jumin also tosses free powerups when you chain merges or finish guests.", 425, 252, 430, 24, 16, "#654a40", "center", 700);
       POWERUPS.forEach((entry, index) => {
         const y = 350 + index * 150;
         rounded(48, y, 624, 136, 30, "rgba(255,250,232,.97)", entry.color, 4);
@@ -2879,10 +3025,10 @@
 
   function drawPowerupBar() {
     const slots = [
-      { id: "skip", fn: useSkipPowerup, x: 54, y: 330 },
-      { id: "choose", fn: useChoosePowerup, x: 54, y: 440 },
-      { id: "magnet", fn: useMagnetPowerup, x: 666, y: 330 },
-      { id: "thaw", fn: useThawPowerup, x: 666, y: 440 }
+      { id: "skip", fn: useSkipPowerup, x: 54, y: 520 },
+      { id: "choose", fn: useChoosePowerup, x: 54, y: 640 },
+      { id: "magnet", fn: useMagnetPowerup, x: 666, y: 520 },
+      { id: "thaw", fn: useThawPowerup, x: 666, y: 640 }
     ];
     for (const slot of slots) {
       const entry = POWERUPS.find(item => item.id === slot.id);
@@ -2929,32 +3075,35 @@
       addButton("powerup" + entry.id, slot.x - 42, slot.y - 42, 84, 84, slot.fn, !game.tutorial && !game.serving && !game.missionDone);
     }
     if ((game.magnetCharges|0) > 0) {
-      text("MAGNET ARMED", 360, 288, 14, "#d45a9a");
+      text("MAGNET ARMED", 360, 470, 14, "#d45a9a");
     }
   }
 
   function drawChoosePicker() {
     if (!game || !game.chooseMode) return;
     ctx.fillStyle = "rgba(8,50,56,.55)";
-    ctx.fillRect(0, 280, W, 860);
-    rounded(50, 360, 620, 520, 36, "rgba(255,249,228,.98)", "#e6ad32", 6);
-    drawJumin(140, 430, 110);
-    shadowText("JUMIN SAYS", 400, 410, 22, "#e6ad32");
-    text("Pick any glass for your next shot.", 400, 448, 18, "#654a40");
+    ctx.fillRect(0, 0, W, H);
+    const panelX = 48, panelY = 220, panelW = 624, panelH = 780;
+    rounded(panelX, panelY, panelW, panelH, 36, "rgba(255,249,228,.985)", "#e6ad32", 6);
+    drawJuminPortrait(panelX + 118, panelY + 118, JUMIN_PORTRAIT, 1, "#e6ad32");
+    shadowText("JUMIN", panelX + 230, panelY + 58, 18, "#e6ad32", "left");
+    text("ANY GLASS", panelX + 230, panelY + 100, 24, "#59392d", "left", 900, 360);
+    wrapText("Pick exactly which glass to shoot next.", panelX + 230, panelY + 138, 360, 24, 17, "#654a40", "left", 700);
+    rounded(panelX + 36, panelY + 250, panelW - 72, 400, 28, "#fff4d8", "#e6ad32", 3);
     const maxTier = Math.min(7, 2 + Math.floor(save.shifts[game.station] / 4) + save.levels[game.station]);
     const options = [];
     for (let tier = BASE_TIER; tier <= maxTier; tier++) options.push(tier);
     options.forEach((tier, index) => {
       const col = index % 4;
       const row = Math.floor(index / 4);
-      const x = 90 + col * 140;
-      const y = 500 + row * 130;
+      const x = panelX + 58 + col * 140;
+      const y = panelY + 280 + row * 130;
       rounded(x, y, 120, 110, 24, "#fff7df", "#e6ad32", 3);
       drawItem(game.station, tier, x + 60, y + 48, itemDisplaySize(game.station, tier, 64, 72));
       text(tier < 0 ? "EMPTY" : `T${tier + 1}`, x + 60, y + 94, 14, "#7b5b4e");
       addButton("chooseTier"+tier, x, y, 120, 110, () => pickChosenTier(tier), true);
     });
-    drawButton("chooseCancel", "CANCEL", 230, 790, 260, 58, "#a9a89d", () => { game.chooseMode = false; }, true, true);
+    drawButton("chooseCancel", "CANCEL", 180, panelY + 670, 360, 70, "#a9a89d", () => { game.chooseMode = false; }, true, true);
   }
 
   function drawPhysicsGuides() {
@@ -3135,70 +3284,81 @@
       {
         title: "JUMIN'S CRASH COURSE",
         body: "Welcome to " + STATIONS[game.station].name + "! Jum Jum berries flavor every menu here. First lesson: empty utensils merge into real bottles.",
-        showMerge: true
+        pose: 0,
+        art: "merge"
       },
       {
         title: "LAUNCH & SERVE",
         body: "Tap the table or slide up from the bottom to launch. Guests only order finished drinks — never empties. Fill the guest bar to finish the shift.",
-        showMerge: false
+        pose: 1,
+        art: "launch"
       },
       {
         title: "ICE & POWERUPS",
-        body: "Frozen bottles can't match until you thaw them. Use Skip, Any Glass, Berry Magnet, and Sun Thaw from the bar under your score — buy more in Jumin's shop.",
-        showMerge: false
+        body: "Frozen bottles can't match until you thaw them. Use Skip, Any Glass, Berry Magnet, and Sun Thaw from the side icons — buy more in Jumin's shop.",
+        pose: 3,
+        art: "powerups"
       }
     ];
-    const page = pages[Math.max(0, Math.min(pages.length - 1, game.tutorialPage|0))];
+    const pageIndex = Math.max(0, Math.min(pages.length - 1, game.tutorialPage|0));
+    const page = pages[pageIndex];
+    const last = pageIndex >= pages.length - 1;
     ctx.fillStyle = "rgba(10,55,59,.47)";
     ctx.fillRect(0,0,W,H);
-    rounded(50, 300, 620, 620, 36, "rgba(255,249,228,.98)", STATIONS[game.station].color, 6);
-    const juminPose = (game.tutorialPage|0) === 0 ? 0 : (game.tutorialPage|0) === 1 ? 1 : 3;
-    drawJumin(140, 380, 120, juminPose);
-    shadowText("JUMIN", 360, 350, 20, STATIONS[game.station].color);
-    text(page.title, 400, 390, 22, "#59392d");
-    wrapText(page.body, 400, 430, 420, 28, 18, "#654a40", "center", 700);
-    if (page.showMerge) {
-      drawItem(game.station, BASE_TIER, 205, 620, itemDisplaySize(game.station, BASE_TIER, 86));
-      drawItem(game.station, BASE_TIER, 360, 560, itemDisplaySize(game.station, BASE_TIER, 86));
-      drawItem(game.station, 0, 515, 620, itemDisplaySize(game.station, 0, 92));
-      shadowText("＋", 282, 610, 34, "#f47d63");
-      shadowText("＝", 438, 610, 34, "#55bd78");
-    } else {
-      wrapText(STATIONS[game.station].flavor, 360, 560, 520, 28, 17, "#7e665a", "center", 700);
-      text(`Shots this shift: ${game.maxShots}  •  Guests: ${game.goal}`, 360, 640, 16, "#8b6b58");
-    }
-    text(`${(game.tutorialPage|0) + 1} / ${pages.length}`, 360, 780, 16, "#8b6b58");
-    const last = (game.tutorialPage|0) >= pages.length - 1;
-    drawButton("tutorialNext", last ? "START SERVING" : "NEXT TIP", 180, 820, 360, 70, STATIONS[game.station].color, () => {
-      if (last) {
-        game.tutorial = false;
-        save.tutorial[game.station] = true;
-        persist();
-      } else {
-        game.tutorialPage = (game.tutorialPage|0) + 1;
+    drawJuminGuidePanel({
+      title: page.title,
+      body: page.body,
+      pose: page.pose,
+      accent: STATIONS[game.station].color,
+      pageIndex,
+      pageCount: pages.length,
+      art: page.art,
+      stationName: STATIONS[game.station].name,
+      buttonId: "tutorialNext",
+      buttonLabel: last ? "START SERVING" : "NEXT TIP",
+      onButton: () => {
+        if (last) {
+          game.tutorial = false;
+          save.tutorial[game.station] = true;
+          persist();
+        } else {
+          game.tutorialPage = pageIndex + 1;
+        }
       }
-    }, true, true);
+    });
   }
 
   function drawModal() {
     if (!modal) return;
     ctx.fillStyle = "rgba(9,57,62,.58)";
     ctx.fillRect(0,0,W,H);
-    if (modal.type === "story") {
-      const pages = modal.pages || [{ title: modal.title, body: modal.body }];
+    if (modal.type === "help" || modal.type === "story") {
+      const pages = modal.type === "help"
+        ? helpPages()
+        : (modal.pages || [{ title: modal.title, body: modal.body, pose: 0, art: "welcome" }]).map((page, index) => ({
+            title: page.title,
+            body: page.body,
+            pose: page.pose != null ? page.pose : (index === 0 ? 0 : index === 1 ? 1 : 2),
+            art: page.art || (index === 0 ? "welcome" : index === 1 ? "serve" : "frozen")
+          }));
       const pageIndex = Math.max(0, Math.min(pages.length - 1, modal.page|0));
       const page = pages[pageIndex];
-      rounded(55, 300, 610, 560, 38, "#fff9e7", "#6b9b50", 6);
-      drawJumin(150, 420, 150, pageIndex === 0 ? 0 : pageIndex === 1 ? 1 : 2);
-      shadowText("JUMIN", 400, 360, 18, "#f47d63");
-      shadowText(page.title, 400, 410, 28, "#f47d63");
-      wrapText(page.body, 400, 460, 420, 32, 20, "#62473d", "center", 700);
-      text(`${pageIndex + 1} / ${pages.length}`, 400, 680, 16, "#8b6b58");
       const last = pageIndex >= pages.length - 1;
-      drawButton("storyok", last ? "LET'S GO!" : "NEXT", 260, 720, 330, 70, "#55bd78", () => {
-        if (last) modal = null;
-        else modal.page = pageIndex + 1;
-      }, true, true);
+      drawJuminGuidePanel({
+        title: page.title,
+        body: page.body,
+        pose: page.pose,
+        accent: modal.type === "help" ? "#3eb1d0" : "#55bd78",
+        pageIndex,
+        pageCount: pages.length,
+        art: page.art,
+        buttonId: modal.type === "help" ? "helpNext" : "storyok",
+        buttonLabel: last ? (modal.type === "help" ? "GOT IT!" : "LET'S GO!") : "NEXT",
+        onButton: () => {
+          if (last) modal = null;
+          else modal.page = pageIndex + 1;
+        }
+      });
     } else if (modal.type === "shift") {
       const station = STATIONS[modal.station];
       rounded(48, 288, 624, 664, 40, "#fff9e7", station.color, 7);
