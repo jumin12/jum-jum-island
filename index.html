@@ -118,10 +118,7 @@
     ui: "art/ui.png"
   };
   const images = {};
-  const SLING_MAX_PULL = 200;
-  const SLING_MIN_PULL = 42;
-  const SLING_MIN_SPEED = 880;
-  const SLING_MAX_SPEED = 1760;
+  const LAUNCH_SPEED = 1460;
 
   const STATIONS = [
     {
@@ -131,7 +128,7 @@
       unlock: 0,
       color: "#ff9f43",
       dark: "#b75722",
-      rule: "Pull back like a slingshot to set force, then release. Matching drinks merge wherever they physically touch.",
+      rule: "Tap anywhere or slide from the bottom to launch. Matching drinks merge wherever they physically touch.",
       flavor: "Fresh fruit, sea breeze, and the island's first smiling guests."
     },
     {
@@ -210,15 +207,15 @@
 
   // Relative real-world footprint per station/tier (shot glass < pineapple < punch bowl, etc.)
   const ITEM_SIZE_SCALE = [
-    [0.55, 0.74, 1.12, 0.94, 1.10, 1.34, 1.50, 1.72], // juice
-    [0.54, 0.88, 1.00, 1.14, 1.26, 1.38, 1.52, 1.70], // cafe
-    [0.52, 0.68, 0.82, 1.00, 1.16, 1.28, 1.42, 1.64], // garden
-    [0.60, 0.94, 1.00, 0.86, 1.22, 1.34, 1.48, 1.66], // marina
-    [0.58, 0.96, 1.10, 1.14, 1.24, 1.36, 1.48, 1.68], // hotel
-    [0.54, 0.78, 0.66, 0.74, 1.04, 1.26, 1.44, 1.62], // lagoon
-    [0.52, 0.84, 1.00, 1.14, 0.92, 1.30, 1.50, 1.70]  // observatory
+    [0.88, 0.98, 1.22, 1.08, 1.20, 1.40, 1.54, 1.74], // juice
+    [0.86, 1.02, 1.12, 1.22, 1.32, 1.42, 1.54, 1.72], // cafe
+    [0.84, 0.94, 1.04, 1.14, 1.26, 1.36, 1.48, 1.66], // garden
+    [0.90, 1.06, 1.12, 1.00, 1.28, 1.40, 1.52, 1.68], // marina
+    [0.88, 1.08, 1.18, 1.22, 1.32, 1.42, 1.52, 1.70], // hotel
+    [0.86, 0.98, 0.90, 0.96, 1.16, 1.34, 1.48, 1.64], // lagoon
+    [0.84, 1.00, 1.12, 1.22, 1.06, 1.36, 1.52, 1.72]  // observatory
   ];
-  const BASE_SIZE_SCALE = [0.48, 0.58, 0.50, 0.62, 0.60, 0.52, 0.56];
+  const BASE_SIZE_SCALE = [0.78, 0.84, 0.80, 0.88, 0.86, 0.82, 0.84];
 
   const ACHIEVEMENTS = [
     { id: "firstServe", name: "First Serve", desc: "Complete your first guest order.", icon: 7, check: s => s.served.reduce((a,b)=>a+b,0) >= 1 },
@@ -1704,8 +1701,8 @@
   }
 
   function pieceRadius(tier, station = game ? game.station : selectedStation) {
-    // Mid-chain items sit near 36px; empty utensils stay smallest.
-    return clamp(37 * itemSizeScale(station, tier), 16, 60);
+    // Mid-chain items sit near ~48px; early empties stay readable but smaller.
+    return clamp(48 * itemSizeScale(station, tier), 28, 74);
   }
 
   function itemDisplaySize(station, tier, base = 64, maxSize = 0) {
@@ -1757,11 +1754,6 @@
       next: randomTier(index),
       launchX: 360,
       aimVX: 0,
-      aimVY: -SLING_MIN_SPEED,
-      aimForce: 0,
-      aimPullX: 0,
-      aimPullY: 0,
-      slingActive: false,
       readyTimer: 0,
       moving: false,
       shots: 0,
@@ -1827,67 +1819,27 @@
     return clamp(value, bounds.left, bounds.right);
   }
 
-  function computeSling(fromX, fromY) {
-    const dx = fromX - game.launchX;
-    const dy = fromY - LAUNCH_Y;
-    const rawPull = Math.hypot(dx, dy);
-    const pull = Math.min(SLING_MAX_PULL, rawPull);
-    const force = clamp(pull / SLING_MAX_PULL, 0, 1);
-    if (pull < 1) {
-      return { vx: 0, vy: -SLING_MIN_SPEED, force: 0, pull: 0, dx: 0, dy: 0 };
-    }
-    const speed = SLING_MIN_SPEED + (SLING_MAX_SPEED - SLING_MIN_SPEED) * force;
-    const len = Math.hypot(dx, dy) || 1;
-    let vx = (-dx / len) * speed;
-    let vy = (-dy / len) * speed;
-    if (vy > -520) vy = -520 - Math.abs(vx) * 0.12;
-    vx = clamp(vx, -560, 560);
-    vy = clamp(vy, -SLING_MAX_SPEED, -520);
-    return { vx, vy, force, pull, dx, dy };
-  }
-
-  function updateSlingAim(fromX, fromY) {
-    const sling = computeSling(fromX, fromY);
-    game.aimVX = sling.vx;
-    game.aimVY = sling.vy;
-    game.aimForce = sling.force;
-    game.aimPullX = sling.dx;
-    game.aimPullY = sling.dy;
-    game.slingActive = sling.pull >= SLING_MIN_PULL;
-    return sling;
-  }
-
-  function clearSlingAim() {
-    game.aimVX = 0;
-    game.aimVY = -SLING_MIN_SPEED;
-    game.aimForce = 0;
-    game.aimPullX = 0;
-    game.aimPullY = 0;
-    game.slingActive = false;
-  }
-
-  function launchPiece(launchX = game.launchX, vx = 0, vy = -SLING_MIN_SPEED) {
+  function launchPiece(launchX = game.launchX, swipeVX = 0) {
     if (!game || game.readyTimer > 0 || game.serving || game.missionDone || game.tutorial) return;
     if (game.shotsLeft <= 0) return;
     game.launchX = clampLauncherX(launchX);
-    let launchVX = clamp(vx, -560, 560);
-    let launchVY = clamp(vy, -SLING_MAX_SPEED, -520);
+    let vx = clamp(swipeVX, -430, 430);
     const shotNumber = game.shots + 1;
     if (game.station === 2 && shotNumber % 5 === 0) {
-      launchVX += game.windDir * 260;
+      vx += game.windDir * 260;
       game.modifierFlash = 1;
     }
     if (game.station === 3 && shotNumber % 4 === 0) {
-      launchVX += game.tideDir * 300;
+      vx += game.tideDir * 300;
       for (const piece of game.pieces) piece.vx += game.tideDir * 72;
       game.modifierFlash = 1;
     }
     const tier = game.current;
     game.pieces.push(createPhysicsPiece(tier, game.launchX, LAUNCH_Y, {
-      vx: launchVX,
-      vy: launchVY,
+      vx,
+      vy: -LAUNCH_SPEED,
       bubble: game.station === 5 && deterministic.next() > .72,
-      spin: launchVX * .0015,
+      spin: vx * .0015,
       entered: false
     }));
     if (tier <= BASE_TIER) {
@@ -1900,8 +1852,8 @@
     game.current = game.next;
     game.next = randomTier(game.station);
     game.readyTimer = .38;
-    clearSlingAim();
-    game.cameraShake = Math.min(.28, Math.hypot(launchVX, launchVY)/3200+.06);
+    game.aimVX = 0;
+    game.cameraShake = Math.min(.28, Math.abs(vx)/2100+.06);
     try { navigator.vibrate?.(7); } catch (_) {}
   }
 
@@ -2321,9 +2273,10 @@
     const radius = pieceRadius(game.current, game.station);
     let x = game.launchX;
     let y = LAUNCH_Y-8;
-    const speed = Math.max(1, Math.hypot(game.aimVX, game.aimVY));
-    const dx = (game.aimVX / speed) * 10;
-    const dy = (game.aimVY / speed) * 10;
+    const directionX = clamp(game.aimVX/1320, -.34, .34);
+    const length = Math.sqrt(1+directionX*directionX);
+    const dx = directionX/length*10;
+    const dy = -1/length*10;
     const points = [{x,y}];
     for (let step = 0; step < 90; step++) {
       x += dx;
@@ -2405,51 +2358,29 @@
 
     if (game.readyTimer <= 0 && !game.serving && !game.missionDone && game.shotsLeft > 0) {
       const bob = Math.sin(time*5)*4;
-      const pulling = pointer.down && pointer.sy > 900 && (pointer.dragging || game.aimForce > 0);
-      const pullScale = pulling ? Math.min(1, Math.hypot(game.aimPullX, game.aimPullY) / SLING_MAX_PULL) : 0;
-      const holdX = game.launchX + game.aimPullX * 0.42;
-      const holdY = LAUNCH_Y + bob + game.aimPullY * 0.42;
-      if (pulling && pullScale > 0.05) {
-        ctx.save();
-        ctx.strokeStyle = `rgba(255,244,196,${0.35 + game.aimForce * 0.45})`;
-        ctx.lineWidth = 4 + game.aimForce * 4;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(game.launchX - 18, LAUNCH_Y + 8);
-        ctx.lineTo(holdX, holdY);
-        ctx.moveTo(game.launchX + 18, LAUNCH_Y + 8);
-        ctx.lineTo(holdX, holdY);
-        ctx.stroke();
-        rounded(game.launchX - 54, LAUNCH_Y + 48, 108, 18, 9, "rgba(20,60,64,.55)", null);
-        rounded(game.launchX - 50, LAUNCH_Y + 51, 100 * game.aimForce, 12, 6, station.color, null);
-        text(game.slingActive ? "RELEASE!" : "PULL", game.launchX, LAUNCH_Y + 78, 14, "#fff8df");
-        ctx.restore();
-      }
-      if (game.slingActive || game.aimForce > 0.12) {
-        const path = predictAimPath();
-        ctx.save();
-        ctx.setLineDash([9,11]);
-        ctx.lineDashOffset = -time*34;
-        ctx.strokeStyle = `rgba(255,255,242,${0.45 + game.aimForce * 0.4})`;
-        ctx.lineWidth = 4 + game.aimForce * 3;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        path.forEach((point,index) => index ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y));
-        ctx.stroke();
-        const end = path[path.length-1];
-        ctx.setLineDash([]);
-        ctx.strokeStyle = station.color;
-        ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(end.x,end.y,10+Math.sin(time*5)*2,0,TAU); ctx.stroke();
-        ctx.restore();
-      }
-      const hold = pulling ? 1.05 + game.aimForce * 0.12 : 1;
-      const glow = ctx.createRadialGradient(holdX,holdY,8,holdX,holdY,62);
+      const path = predictAimPath();
+      ctx.save();
+      ctx.setLineDash([9,11]);
+      ctx.lineDashOffset = -time*34;
+      ctx.strokeStyle = "rgba(255,255,242,.78)";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      path.forEach((point,index) => index ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y));
+      ctx.stroke();
+      const end = path[path.length-1];
+      ctx.setLineDash([]);
+      ctx.strokeStyle = station.color;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(end.x,end.y,10+Math.sin(time*5)*2,0,TAU); ctx.stroke();
+      ctx.restore();
+      const hold = pointer.down && pointer.sy > 930 ? 1.08 : 1;
+      const glow = ctx.createRadialGradient(game.launchX,LAUNCH_Y+bob,8,game.launchX,LAUNCH_Y+bob,62);
       glow.addColorStop(0,station.color+"66");
       glow.addColorStop(1,"rgba(255,255,255,0)");
       ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(holdX,holdY,62,0,TAU); ctx.fill();
-      drawItem(game.station,game.current,holdX,holdY,pieceRadius(game.current, game.station)*2.45,1,game.aimVX*.00016,hold,false);
+      ctx.beginPath(); ctx.arc(game.launchX,LAUNCH_Y+bob,62,0,TAU); ctx.fill();
+      drawItem(game.station,game.current,game.launchX,LAUNCH_Y+bob,pieceRadius(game.current, game.station)*2.45,1,game.aimVX*.00016,hold,false);
     } else if (game.shotsLeft <= 0 && !game.missionDone) {
       text("NO SHOTS LEFT", 360, LAUNCH_Y, 22, "#fff0d8");
     }
@@ -2658,7 +2589,7 @@
       const tier = i - 1;
       const x = 52 + i * 72;
       if (i < 8) text("›", x+37, 1209, 20, "#9c7048");
-      drawItem(game.station, tier, x, 1208, itemDisplaySize(game.station, tier, 50, 68));
+      drawItem(game.station, tier, x, 1208, itemDisplaySize(game.station, tier, 58, 78));
     }
   }
 
@@ -2673,7 +2604,7 @@
     drawItem(game.station, 0, 515, 643, itemDisplaySize(game.station, 0, 102));
     shadowText("＋", 282, 630, 37, "#f47d63");
     shadowText("＝", 438, 630, 37, "#55bd78");
-    text("Pull back like a slingshot to set force, then release.", 360, 719, 17, "#786157", "center", 700, 520);
+    text("Tap the table or slide upward from the bottom to launch.", 360, 719, 17, "#786157", "center", 700, 520);
     drawButton("tutorial", "START SERVING", 180, 827, 360, 75, STATIONS[game.station].color, () => {
       game.tutorial = false;
       save.tutorial[game.station] = true;
@@ -2736,7 +2667,7 @@
       text(`Guests served  ${modal.guests}/${modal.goal}`, 360, 520, 22, "#59392d");
       text(`Score  ${formatNumber(modal.score)}`, 360, 568, 26, "#59392d");
       text(`Best  ${formatNumber(modal.highScore)}`, 360, 610, 18, "#8b6b58");
-      wrapText("You ran out of shots before finishing every guest. Try a stronger slingshot pull and smarter merges.", 360, 660, 500, 28, 18, "#80685b", "center", 700);
+      wrapText("You ran out of shots before finishing every guest. Aim carefully and merge smarter next shift.", 360, 660, 500, 28, 18, "#80685b", "center", 700);
       drawButton("retryFail", "TRY AGAIN", 102, 740, 244, 70, station.color, () => {
         const index = modal.station;
         modal = null;
@@ -2814,9 +2745,9 @@
         break;
       }
     }
-    if (!pressedButton && screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0 && p.y > 900) {
+    if (!pressedButton && screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0 && p.y > 930) {
       game.launchX = clampLauncherX(p.x);
-      clearSlingAim();
+      game.aimVX = 0;
     }
     try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
   }, { passive: false });
@@ -2826,13 +2757,15 @@
     event.preventDefault();
     const p = canvasPoint(event);
     pointer.x = p.x; pointer.y = p.y;
-    if (Math.hypot(pointer.x-pointer.sx, pointer.y-pointer.sy) > 10) {
+    if (Math.hypot(pointer.x-pointer.sx, pointer.y-pointer.sy) > 14) {
       pointer.dragging = true;
-      if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0 && pointer.sy > 900) {
-        if (Math.hypot(pointer.x - game.launchX, pointer.y - LAUNCH_Y) < 36 && pointer.y > 980) {
+      if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0 && pointer.sy > 930) {
+        if (pointer.y > 930) {
           game.launchX = clampLauncherX(pointer.x);
+          game.aimVX = 0;
+        } else {
+          game.aimVX = clamp((pointer.x-game.launchX)*3.2,-430,430);
         }
-        updateSlingAim(pointer.x, pointer.y);
       }
     }
   }, { passive: false });
@@ -2844,18 +2777,15 @@
     if (button) {
       button.action();
     } else if (screen === "play" && game && game.readyTimer <= 0 && !game.serving && !game.tutorial && !modal && game.shotsLeft > 0) {
-      if (pointer.sy > 900 && pointer.dragging) {
-        const sling = updateSlingAim(pointer.x, pointer.y);
-        if (sling.pull >= SLING_MIN_PULL) {
-          launchPiece(game.launchX, sling.vx, sling.vy);
-        } else {
-          clearSlingAim();
-        }
-      } else if (game) {
-        clearSlingAim();
+      const upward = pointer.sy-pointer.y > 28;
+      const tappedTable = pointer.sy > 420 && pointer.sy < 930 && !pointer.dragging;
+      const touchedLauncher = pointer.sy > 930;
+      if (tappedTable) {
+        game.launchX = clampLauncherX(p.x);
+        launchPiece(game.launchX, 0);
+      } else if (touchedLauncher && ((pointer.dragging && upward) || !pointer.dragging)) {
+        launchPiece(game.launchX, game.aimVX);
       }
-    } else if (game) {
-      clearSlingAim();
     }
     pointer.down = false;
     pointer.dragging = false;
@@ -2863,7 +2793,6 @@
   }, { passive: false });
 
   canvas.addEventListener("pointercancel", () => {
-    if (game) clearSlingAim();
     pointer.down = false;
     pointer.dragging = false;
     pressedButton = null;
