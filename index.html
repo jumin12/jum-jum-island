@@ -211,6 +211,17 @@
     ["Glass Lens","Star Chart","Brass Scope","Moon Globe","Comet Model","Sky Projector","Telescope Array","Celestial Beacon"]
   ];
 
+  // Relative real-world footprint per station/tier (shot glass < pineapple < punch bowl, etc.)
+  const ITEM_SIZE_SCALE = [
+    [0.55, 0.74, 1.12, 0.94, 1.10, 1.34, 1.50, 1.72], // juice
+    [0.54, 0.88, 1.00, 1.14, 1.26, 1.38, 1.52, 1.70], // cafe
+    [0.52, 0.68, 0.82, 1.00, 1.16, 1.28, 1.42, 1.64], // garden
+    [0.60, 0.94, 1.00, 0.86, 1.22, 1.34, 1.48, 1.66], // marina
+    [0.58, 0.96, 1.10, 1.14, 1.24, 1.36, 1.48, 1.68], // hotel
+    [0.54, 0.78, 0.66, 0.74, 1.04, 1.26, 1.44, 1.62], // lagoon
+    [0.52, 0.84, 1.00, 1.14, 0.92, 1.30, 1.50, 1.70]  // observatory
+  ];
+
   const UPGRADE_COSTS = [
     { coins: 800, tools: 6, shifts: 2 },
     { coins: 2600, tools: 18, shifts: 8 },
@@ -1060,7 +1071,7 @@
       ctx.globalCompositeOperation = "screen";
       for (const side of [-1,1]) {
         const angle = progress*Math.PI*2.2+side*Math.PI/2;
-        drawItem(fusion.station,fusion.tier,fusion.x+Math.cos(angle)*orbit,fusion.y+Math.sin(angle)*orbit*.45,44,1,side*progress*.8,.72,false);
+        drawItem(fusion.station,fusion.tier,fusion.x+Math.cos(angle)*orbit,fusion.y+Math.sin(angle)*orbit*.45,itemDisplaySize(fusion.station,fusion.tier,42),1,side*progress*.8,.72,false);
       }
       const glow = ctx.createRadialGradient(fusion.x,fusion.y,2,fusion.x,fusion.y,60);
       glow.addColorStop(0,"rgba(255,255,230,.95)");
@@ -1529,17 +1540,32 @@
   }
 
   function randomTier(stationIndex = game ? game.station : selectedStation) {
-    const roll = deterministic.next();
     const mission = save.shifts[stationIndex];
-    if (mission > 10 && roll > .92) return 2;
-    if (mission > 3 && roll > .72) return 1;
+    // Early shifts lean hard on starter drinks; higher merge seeds unlock slowly.
+    const weights = [1.85, 0.95, 0, 0, 0, 0, 0, 0];
+    if (mission >= 2) weights[2] = 0.28;
+    if (mission >= 5) { weights[1] = 1.05; weights[2] = 0.42; }
+    if (mission >= 9) { weights[2] = 0.55; weights[3] = 0.22; }
+    if (mission >= 14) { weights[3] = 0.32; weights[4] = 0.12; }
+    if (mission >= 22) { weights[4] = 0.2; weights[5] = 0.08; }
+    if (mission >= 32) { weights[5] = 0.12; weights[6] = 0.05; }
+    // Keep the two earliest drinks the most common on every shift.
+    weights[0] *= 1.35;
+    weights[1] *= 1.15;
+    let total = 0;
+    for (const weight of weights) total += weight;
+    let roll = deterministic.next() * total;
+    for (let tier = 0; tier < weights.length; tier++) {
+      roll -= weights[tier];
+      if (roll <= 0) return tier;
+    }
     return 0;
   }
 
   function makeOrder() {
     const mission = save.shifts[game.station];
-    const maxTier = Math.min(7, 2 + Math.floor(mission / 9) + (save.levels[game.station] > 2 ? 1 : 0));
-    const minTier = Math.min(3, 2 + Math.floor(mission / 22));
+    const maxTier = Math.min(7, 1 + Math.floor(mission / 7) + (save.levels[game.station] > 2 ? 1 : 0));
+    const minTier = Math.min(3, Math.floor(mission / 16));
     const target = minTier + Math.floor(deterministic.next() * (maxTier-minTier+1));
     const twoPiece = game.station === 1 || game.station === 4;
     let second = null;
@@ -1562,11 +1588,25 @@
   const OVERFLOW_LINE = 958;
   const LAUNCH_Y = 1060;
 
-  function pieceRadius(tier) {
-    return 34 + Math.min(7, tier) * 1.7;
+  function itemSizeScale(station, tier) {
+    const s = Math.max(0, Math.min(ITEM_SIZE_SCALE.length - 1, station|0));
+    const t = Math.max(0, Math.min(7, tier|0));
+    return ITEM_SIZE_SCALE[s][t];
+  }
+
+  function pieceRadius(tier, station = game ? game.station : selectedStation) {
+    // Mid-chain items sit near 36px; shot glasses stay small, punch bowls get big.
+    return clamp(37 * itemSizeScale(station, tier), 18, 60);
+  }
+
+  function itemDisplaySize(station, tier, base = 64, maxSize = 0) {
+    const mid = itemSizeScale(station, 3) || 1;
+    const size = base * (itemSizeScale(station, tier) / mid);
+    return maxSize > 0 ? Math.min(maxSize, size) : size;
   }
 
   function createPhysicsPiece(tier, x, y, options = {}) {
+    const station = options.station != null ? options.station : (game ? game.station : selectedStation);
     return {
       id: nextPhysicsPieceId++,
       tier,
@@ -1574,7 +1614,7 @@
       y,
       vx: options.vx || 0,
       vy: options.vy || 0,
-      r: pieceRadius(tier),
+      r: pieceRadius(tier, station),
       bubble: !!options.bubble,
       scale: options.scale || 1,
       angle: options.angle || 0,
@@ -1658,7 +1698,7 @@
   }
 
   function launcherBounds() {
-    const radius = pieceRadius(game.current);
+    const radius = pieceRadius(game.current, game.station);
     return {
       left: laneBoundaryX(0, 1000) + radius + 8,
       right: laneBoundaryX(4, 1000) - radius - 8
@@ -1804,7 +1844,7 @@
         game.modifierFlash = 1;
         if (merged.tier < 7) {
           merged.tier++;
-          merged.r = pieceRadius(merged.tier);
+          merged.r = pieceRadius(merged.tier, game.station);
           merged.scale = 1.62;
           merged.fusion = 1;
           mergeBursts.push({ station: game.station, tier: merged.tier, x, y, life: .62, max: .62 });
@@ -2094,7 +2134,7 @@
   }
 
   function predictAimPath() {
-    const radius = pieceRadius(game.current);
+    const radius = pieceRadius(game.current, game.station);
     let x = game.launchX;
     let y = LAUNCH_Y-8;
     const directionX = clamp(game.aimVX/1320, -.34, .34);
@@ -2204,7 +2244,7 @@
       glow.addColorStop(1,"rgba(255,255,255,0)");
       ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(game.launchX,LAUNCH_Y+bob,62,0,TAU); ctx.fill();
-      drawItem(game.station,game.current,game.launchX,LAUNCH_Y+bob,pieceRadius(game.current)*2.45,1,game.aimVX*.00016,hold,false);
+      drawItem(game.station,game.current,game.launchX,LAUNCH_Y+bob,pieceRadius(game.current, game.station)*2.45,1,game.aimVX*.00016,hold,false);
     }
 
     drawRecipeStrip();
@@ -2246,7 +2286,7 @@
     text(`${Math.round(progress*100)}%`, 361, 157, 15, "#fff8df");
     rounded(470, 126, 210, 58, 25, "rgba(255,248,223,.94)", station.color, 4);
     text(`NEXT`, 500, 154, 15, "#7b5b4e", "left");
-    drawItem(game.station, game.next, 622, 154, 53);
+    drawItem(game.station, game.next, 622, 154, itemDisplaySize(game.station, game.next, 52));
   }
 
   function drawPhysicsGuides() {
@@ -2281,7 +2321,7 @@
     const targetCount = order.targets.length;
     order.targets.forEach((tier,index) => {
       const px = targetCount === 1 ? 0 : (index ? 53 : -53);
-      drawItem(game.station, tier, px, 8, 72, order.done[index] ? .28 : 1);
+      drawItem(game.station, tier, px, 8, itemDisplaySize(game.station, tier, 70), order.done[index] ? .28 : 1);
       if (order.done[index]) drawUi(7, px+25, 28, 38);
     });
     text(formatNumber(order.value), 0, 56, 18, "#6d4938");
@@ -2349,7 +2389,7 @@
     rounded(256, 344, 208, 36, 18, "rgba(107,63,42,.8)", "#f5d9a7", 3);
     for (const shelfItem of game.shelf) {
       const pop = 1+game.servePop*.16;
-      drawItem(game.station, shelfItem.tier, shelfItem.x, 348-Math.sin(time*4+shelfItem.targetIndex)*3, 65, 1, Math.sin(time*3+shelfItem.targetIndex)*.03, pop);
+      drawItem(game.station, shelfItem.tier, shelfItem.x, 348-Math.sin(time*4+shelfItem.targetIndex)*3, itemDisplaySize(game.station, shelfItem.tier, 64), 1, Math.sin(time*3+shelfItem.targetIndex)*.03, pop);
     }
   }
 
@@ -2373,12 +2413,12 @@
     }
     if (s === 6) {
       rounded(44, 196, 204, 54, 27, "rgba(255,248,223,.93)", STATIONS[s].color, 4);
-      drawItem(6, 7, 76, 223, 44);
+      drawItem(6, 7, 76, 223, itemDisplaySize(6, 7, 42));
       text(`STAR LINK ${game.constellation}/3`, 160, 223, 15, "#51457d");
       if (game.modifierFlash > 0) {
         ctx.save();
         ctx.globalAlpha = game.modifierFlash;
-        drawItem(6, 7, 360, 700, 156);
+        drawItem(6, 7, 360, 700, itemDisplaySize(6, 7, 140));
         shadowText("CONSTELLATION!", 360, 810, 30, "#f4f2ff");
         ctx.restore();
       }
@@ -2409,7 +2449,7 @@
       if (tier < 7) {
         text("›", x+42, 1209, 24, "#9c7048");
       }
-      drawItem(game.station, tier, x, 1208, 62);
+      drawItem(game.station, tier, x, 1208, itemDisplaySize(game.station, tier, 56, 78));
     }
   }
 
@@ -2419,9 +2459,9 @@
     rounded(62, 376, 596, 420, 36, "rgba(255,249,228,.98)", STATIONS[game.station].color, 6);
     text(STATIONS[game.station].icon, 360, 430, 25, STATIONS[game.station].dark);
     wrapText(STATIONS[game.station].rule, 360, 470, 500, 31, 21, "#654a40", "center", 700);
-    drawItem(game.station, 0, 205, 643, 105);
-    drawItem(game.station, 0, 360, 575, 105);
-    drawItem(game.station, 1, 515, 643, 112);
+    drawItem(game.station, 0, 205, 643, itemDisplaySize(game.station, 0, 96));
+    drawItem(game.station, 0, 360, 575, itemDisplaySize(game.station, 0, 96));
+    drawItem(game.station, 1, 515, 643, itemDisplaySize(game.station, 1, 102));
     shadowText("＋", 282, 630, 37, "#f47d63");
     shadowText("＝", 438, 630, 37, "#55bd78");
     text("Place it anywhere, flick upward, and match at the first point of contact.", 360, 719, 17, "#786157", "center", 700, 520);
@@ -2701,11 +2741,18 @@
           vx: Math.round(piece.vx),
           vy: Math.round(piece.vy),
           radius: Math.round(piece.r),
+          sizeScale: itemSizeScale(game.station, piece.tier),
           bubble: piece.bubble,
           settled: piece.settled
         })),
         currentTier: game.current,
         nextTier: game.next,
+        itemSizes: ITEM_NAMES[game.station].map((_, tier) => ({
+          tier,
+          name: ITEM_NAMES[game.station][tier],
+          radius: Math.round(pieceRadius(tier, game.station)),
+          scale: itemSizeScale(game.station, tier)
+        })),
         launcherX: Math.round(game.launchX),
         aimVX: Math.round(game.aimVX),
         ready: game.readyTimer <= 0,
