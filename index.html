@@ -124,10 +124,93 @@
   const LAUNCH_SPEED = 1460;
 
   const POWERUPS = [
-    { id: "skip", name: "Skip Glass", desc: "Toss the current glass and draw the next one.", cost: 220, color: "#f47d63", icon: 0 },
-    { id: "choose", name: "Any Glass", desc: "Pick exactly which glass to shoot next.", cost: 380, color: "#e6ad32", icon: 1 },
-    { id: "magnet", name: "Berry Magnet", desc: "Your next shot pulls matching bottles hard.", cost: 340, color: "#d45a9a", icon: 2 },
-    { id: "thaw", name: "Sun Thaw", desc: "Melt every frozen bottle on the table.", cost: 300, color: "#3eb1d0", icon: 3 }
+    { id: "skip", name: "Skip Glass", desc: "Toss the current glass and draw the next one.", cost: 3200, color: "#f47d63", icon: 0 },
+    { id: "choose", name: "Any Glass", desc: "Pick exactly which glass to shoot next.", cost: 7800, color: "#e6ad32", icon: 1 },
+    { id: "magnet", name: "Berry Magnet", desc: "Your next shot pulls matching bottles hard.", cost: 5600, color: "#d45a9a", icon: 2 },
+    { id: "thaw", name: "Sun Thaw", desc: "Melt every frozen bottle on the table.", cost: 4900, color: "#3eb1d0", icon: 3 }
+  ];
+
+  const DOCK_MISSIONS = [
+    {
+      id: "ferryGuests",
+      name: "Ferry Welcome",
+      desc: "Serve 8 guests anywhere on the island.",
+      goal: 8,
+      progress: s => s.served.reduce((a, b) => a + b, 0),
+      reward: { coins: 700, tools: 2 },
+      art: "serve",
+      pose: 0
+    },
+    {
+      id: "crateHaul",
+      name: "Crate Haul",
+      desc: "Complete 50 merges across any venue.",
+      goal: 50,
+      progress: s => s.totalMerges,
+      reward: { coins: 1100, tools: 3 },
+      art: "merge",
+      pose: 1
+    },
+    {
+      id: "dockShifts",
+      name: "Dock Duty",
+      desc: "Finish 3 full shifts anywhere.",
+      goal: 3,
+      progress: s => s.shifts.reduce((a, b) => a + b, 0),
+      reward: { coins: 1400, powerup: "magnet" },
+      art: "launch",
+      pose: 1
+    },
+    {
+      id: "juiceStar",
+      name: "Juice Run",
+      desc: "Serve 12 guests at Beach Juice Shack.",
+      goal: 12,
+      progress: s => s.served[0]|0,
+      reward: { coins: 1000, tools: 4 },
+      art: "welcome",
+      pose: 2
+    },
+    {
+      id: "chainMaster",
+      name: "Chain Signal",
+      desc: "Hit a merge chain of ×4 or higher.",
+      goal: 4,
+      progress: s => Math.max(...s.bestChains, 0),
+      reward: { coins: 1800, powerup: "choose" },
+      art: "powerups",
+      pose: 2
+    },
+    {
+      id: "starFerry",
+      name: "Star Ferry",
+      desc: "Collect 12 stars for the island.",
+      goal: 12,
+      progress: s => s.stars|0,
+      reward: { coins: 2200, tools: 5, powerup: "thaw" },
+      art: "frozen",
+      pose: 3
+    },
+    {
+      id: "pierOpen",
+      name: "Pier Patrol",
+      desc: "Unlock Marina Supply on the map.",
+      goal: 1,
+      progress: s => s.unlocked[3] ? 1 : 0,
+      reward: { coins: 2800, tools: 6, stars: 1 },
+      art: "island",
+      pose: 0
+    },
+    {
+      id: "landmarkAid",
+      name: "Landmark Aid",
+      desc: "Upgrade any venue to Level 3.",
+      goal: 3,
+      progress: s => Math.max(...s.levels, 0),
+      reward: { coins: 4500, tools: 8, powerup: "skip" },
+      art: "island",
+      pose: 2
+    }
   ];
 
   const STATIONS = [
@@ -402,7 +485,8 @@
       constellationHits: 0,
       baseLaunches: 0,
       powerups: defaultPowerups(),
-      metJumin: false
+      metJumin: false,
+      missionsClaimed: {}
     };
   }
 
@@ -451,6 +535,7 @@
         }
       }
       merged.metJumin = !!raw.metJumin || !!raw.welcomed;
+      merged.missionsClaimed = Object.assign({}, base.missionsClaimed, raw.missionsClaimed || {});
       return merged;
     } catch (_) {
       return base;
@@ -492,6 +577,7 @@
   let mapTourists = [];
   let toast = null;
   let modal = null;
+  let storyQueue = [];
   let game = null;
   let particles = [];
   let floaters = [];
@@ -513,13 +599,21 @@
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   }
 
-  function updateUnlocks() {
+  function updateUnlocks(announceStory = false) {
     for (let i = 0; i < STATIONS.length; i++) {
       if (!save.unlocked[i] && save.stars >= STATIONS[i].unlock) {
         save.unlocked[i] = true;
         toast = { text: STATIONS[i].name + " is ready to restore!", t: 4.5, color: STATIONS[i].color };
         const site = mapSite(i);
         burst(site.x, site.y, 28, STATIONS[i].color, "star");
+        if (announceStory) {
+          showJuminStory({
+            title: "NEW VENUE OPEN!",
+            body: `${STATIONS[i].name} is ready! ${STATIONS[i].flavor}`,
+            pose: 0,
+            art: "island"
+          }, { accent: STATIONS[i].color });
+        }
       }
     }
     persist();
@@ -811,44 +905,50 @@
     return [
       {
         title: "WELCOME ABOARD",
-        body: "I'm Jumin! Jum Jum Island is famous for jum jum berries. Slide matching bottles, serve guests, and reopen every venue.",
+        body: "I'm Jumin! Slide matching bottles, serve guests, and reopen every venue on Jum Jum Island.",
         pose: 0,
         art: "welcome"
       },
       {
         title: "EMPTY TO REAL",
-        body: "Empty utensils merge into real drinks first. Matching finished bottles climb the recipe chain from left to right.",
+        body: "Empty utensils merge into real drinks first. Then match finished bottles up the recipe chain.",
         pose: 1,
         art: "merge"
       },
       {
         title: "LAUNCH & SHOTS",
-        body: "Tap the table or slide up from the bottom to launch. Each shift has limited shots — plan merges before you fire.",
+        body: "Tap the table or slide up to launch. Shots are limited each shift — plan merges carefully.",
         pose: 1,
         art: "launch"
       },
       {
         title: "SERVE GUESTS",
-        body: "Guests only order finished drinks, never empties. Fill their order bar to complete the shift and earn stars.",
+        body: "Guests want finished drinks only. Fill the guest bar to finish the shift and earn stars.",
         pose: 2,
         art: "serve"
       },
       {
         title: "FROZEN BOTTLES",
-        body: "Icy bottles can't match until thawed. Use Sun Thaw or wait for a free powerup from Jumin during a hot streak.",
+        body: "Icy bottles can't match until thawed. Use Sun Thaw from the side icons when you need it.",
         pose: 3,
         art: "frozen"
       },
       {
         title: "POWERUPS",
-        body: "Skip, Any Glass, Berry Magnet, and Sun Thaw sit on the sides while you play. Glowing icons have uses left; grey means empty.",
+        body: "Side icons glow when you own uses. Grey means empty. Buy more in Jumin's shop — they cost dearly!",
         pose: 1,
         art: "powerups"
       },
       {
-        title: "ISLAND & SHOP",
-        body: "Stars unlock venues. Tools upgrade buildings. Visit Jumin's shop for powerups and styles that dress the whole island.",
+        title: "DOCK MISSIONS",
+        body: "Open DOCKS on the island map for ferry missions. Finish goals to claim coins, tools, and powerups.",
         pose: 0,
+        art: "missions"
+      },
+      {
+        title: "ISLAND & SHOP",
+        body: "Stars unlock venues. Tools upgrade buildings. Styles in the shop dress the whole island.",
+        pose: 2,
         art: "island"
       }
     ];
@@ -856,47 +956,89 @@
 
   function drawHelpArt(kind, cx, cy) {
     if (kind === "welcome") {
-      drawBuilding(0, Math.max(0, save.levels[0]|0), cx, cy + 10, 150, 1, false);
+      drawBuilding(0, Math.max(0, save.levels[0]|0), cx, cy + 6, 130, 1, false);
     } else if (kind === "merge") {
-      drawItem(0, BASE_TIER, cx - 150, cy + 10, itemDisplaySize(0, BASE_TIER, 78));
-      drawItem(0, BASE_TIER, cx - 20, cy - 36, itemDisplaySize(0, BASE_TIER, 78));
-      drawItem(0, 0, cx + 140, cy + 10, itemDisplaySize(0, 0, 86));
-      shadowText("＋", cx - 85, cy, 30, "#f47d63");
-      shadowText("＝", cx + 55, cy, 30, "#55bd78");
+      drawItem(0, BASE_TIER, cx - 130, cy + 8, itemDisplaySize(0, BASE_TIER, 70));
+      drawItem(0, BASE_TIER, cx - 10, cy - 28, itemDisplaySize(0, BASE_TIER, 70));
+      drawItem(0, 0, cx + 120, cy + 8, itemDisplaySize(0, 0, 78));
+      shadowText("＋", cx - 70, cy, 28, "#f47d63");
+      shadowText("＝", cx + 50, cy, 28, "#55bd78");
     } else if (kind === "launch") {
-      rounded(cx - 170, cy - 20, 340, 90, 28, "rgba(255,244,210,.95)", "#3eb1d0", 3);
-      drawItem(0, 1, cx, cy - 40, itemDisplaySize(0, 1, 70));
-      text("TAP  or  SLIDE UP", cx, cy + 42, 18, "#654a40");
-      text("Limited shots each shift", cx, cy + 68, 15, "#8b6b58");
+      rounded(cx - 150, cy - 36, 300, 100, 24, "rgba(255,244,210,.95)", "#3eb1d0", 3);
+      drawItem(0, 1, cx, cy - 28, itemDisplaySize(0, 1, 64));
+      text("TAP  or  SLIDE UP", cx, cy + 40, 17, "#654a40");
     } else if (kind === "serve") {
-      rounded(cx - 180, cy - 50, 360, 120, 28, "rgba(255,244,210,.95)", "#f47d63", 3);
-      drawItem(0, 2, cx - 90, cy - 8, itemDisplaySize(0, 2, 64));
-      drawItem(0, 3, cx + 20, cy - 8, itemDisplaySize(0, 3, 64));
-      drawUi(7, cx + 120, cy - 8, 54);
-      text("Guest orders want finished drinks", cx, cy + 52, 15, "#8b6b58");
+      rounded(cx - 160, cy - 46, 320, 110, 24, "rgba(255,244,210,.95)", "#f47d63", 3);
+      drawItem(0, 2, cx - 80, cy - 8, itemDisplaySize(0, 2, 58));
+      drawItem(0, 3, cx + 10, cy - 8, itemDisplaySize(0, 3, 58));
+      drawUi(7, cx + 110, cy - 8, 48);
+      text("Finished drinks only", cx, cy + 48, 15, "#8b6b58");
     } else if (kind === "frozen") {
-      drawItem(0, 2, cx - 70, cy, itemDisplaySize(0, 2, 88), 1, 0, 1, false, true);
-      drawPowerupIcon(3, cx + 90, cy, 92);
-      shadowText("THAW", cx + 90, cy + 70, 18, "#3eb1d0");
+      drawItem(0, 2, cx - 60, cy, itemDisplaySize(0, 2, 80), 1, 0, 1, false, true);
+      drawPowerupIcon(3, cx + 80, cy, 84);
+      text("SUN THAW", cx + 80, cy + 62, 15, "#3eb1d0");
     } else if (kind === "powerups") {
       for (let i = 0; i < 4; i++) {
-        const x = cx - 165 + i * 110;
+        const x = cx - 150 + i * 100;
         ctx.beginPath();
-        ctx.arc(x, cy, 40, 0, TAU);
+        ctx.arc(x, cy - 8, 34, 0, TAU);
         ctx.fillStyle = "rgba(255,248,223,.96)";
         ctx.fill();
         ctx.lineWidth = 3;
         ctx.strokeStyle = POWERUPS[i].color;
         ctx.stroke();
-        drawPowerupIcon(i, x, cy, 64);
-        text(POWERUPS[i].name.split(" ")[0].toUpperCase(), x, cy + 58, 12, "#7b5b4e");
+        drawPowerupIcon(i, x, cy - 8, 54);
+        text(POWERUPS[i].name.split(" ")[0].toUpperCase(), x, cy + 48, 11, "#7b5b4e");
       }
+    } else if (kind === "missions") {
+      rounded(cx - 170, cy - 70, 340, 140, 26, "rgba(255,244,210,.95)", "#3eb1d0", 3);
+      drawBuilding(3, Math.max(0, save.levels[3]|0), cx - 90, cy - 10, 100, 1, false);
+      drawUi(0, cx + 70, cy - 24, 52);
+      drawUi(2, cx + 130, cy - 24, 52);
+      text("DOCK BOARD", cx, cy + 48, 18, "#246a8b");
+      text("Claim ferry rewards", cx, cy + 74, 14, "#8b6b58");
     } else if (kind === "island") {
       for (let i = 0; i < 4; i++) {
-        drawBuilding(i, Math.max(0, save.levels[i]|0), cx - 150 + i * 100, cy + 8, 78, 1, false);
+        drawBuilding(i, Math.max(0, save.levels[i]|0), cx - 140 + i * 92, cy + 4, 70, 1, false);
       }
-      text("Unlock • Upgrade • Restyle", cx, cy + 70, 15, "#8b6b58");
+      text("Unlock • Upgrade • Restyle", cx, cy + 62, 14, "#8b6b58");
+    } else if (kind === "upgrade") {
+      drawBuilding(selectedStation, Math.max(0, save.levels[selectedStation]|0), cx, cy, 150, 1, false);
+      text("Venue upgraded!", cx, cy + 90, 16, "#55bd78");
+    } else if (kind === "reward") {
+      drawUi(0, cx - 90, cy, 64);
+      drawUi(2, cx, cy, 64);
+      drawUi(1, cx + 90, cy, 64);
+      text("Bonus cargo secured", cx, cy + 70, 15, "#8b6b58");
     }
+  }
+
+  function wrapTextClipped(value, x, y, maxWidth, lineHeight, size, color, align, weight, maxLines) {
+    ctx.save();
+    ctx.font = `${weight} ${size}px "Trebuchet MS",sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = color;
+    const words = String(value || "").split(/\s+/);
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const test = line ? line + " " + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else line = test;
+    }
+    if (line) lines.push(line);
+    const shown = lines.slice(0, maxLines);
+    if (lines.length > maxLines && shown.length) {
+      let last = shown[shown.length - 1];
+      while (last.length > 3 && ctx.measureText(last + "…").width > maxWidth) last = last.slice(0, -1);
+      shown[shown.length - 1] = last + "…";
+    }
+    shown.forEach((entry, index) => ctx.fillText(entry, x, y + index * lineHeight));
+    ctx.restore();
+    return shown.length * lineHeight;
   }
 
   function drawJuminGuidePanel(options) {
@@ -913,20 +1055,124 @@
       onButton = () => {},
       stationName = null
     } = options;
-    const panelX = 48;
-    const panelY = 220;
-    const panelW = 624;
-    const panelH = 780;
+    const panelX = 40;
+    const panelY = 170;
+    const panelW = 640;
+    const panelH = 900;
+    const portraitSize = 128;
     rounded(panelX, panelY, panelW, panelH, 36, "rgba(255,249,228,.985)", accent, 6);
-    drawJuminPortrait(panelX + 118, panelY + 118, JUMIN_PORTRAIT, pose, accent);
-    shadowText("JUMIN", panelX + 230, panelY + 58, 18, accent, "left");
-    if (stationName) text(stationName, panelX + 230, panelY + 86, 15, "#8b6b58", "left", 700, 340);
-    text(title, panelX + 230, panelY + (stationName ? 118 : 100), 24, "#59392d", "left", 900, 360);
-    wrapText(body, panelX + 230, panelY + (stationName ? 156 : 138), 360, 24, 17, "#654a40", "left", 700);
-    rounded(panelX + 36, panelY + 250, panelW - 72, 340, 28, "#fff4d8", accent, 3);
-    if (art) drawHelpArt(art, panelX + panelW / 2, panelY + 400);
-    text(`${pageIndex + 1} / ${pageCount}`, 360, panelY + 640, 16, "#8b6b58");
-    drawButton(buttonId, buttonLabel, 180, panelY + 670, 360, 70, accent, onButton, true, true);
+
+    const portraitX = panelX + 104;
+    const portraitY = panelY + 112;
+    drawJuminPortrait(portraitX, portraitY, portraitSize, pose, accent);
+
+    const textBoxX = panelX + 196;
+    const textBoxY = panelY + 36;
+    const textBoxW = panelW - 228;
+    const textBoxH = 152;
+    rounded(textBoxX, textBoxY, textBoxW, textBoxH, 22, "#fff4d8", accent, 2);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(textBoxX + 12, textBoxY + 10, textBoxW - 24, textBoxH - 20);
+    ctx.clip();
+    shadowText("JUMIN", textBoxX + 16, textBoxY + 28, 16, accent, "left");
+    if (stationName) text(stationName, textBoxX + 16, textBoxY + 52, 13, "#8b6b58", "left", 700, textBoxW - 36);
+    text(title, textBoxX + 16, textBoxY + (stationName ? 78 : 58), 22, "#59392d", "left", 900, textBoxW - 36);
+    wrapTextClipped(body, textBoxX + 16, textBoxY + (stationName ? 108 : 88), textBoxW - 36, 20, 15, "#654a40", "left", 700, stationName ? 2 : 3);
+    ctx.restore();
+
+    const artX = panelX + 28;
+    const artY = panelY + 210;
+    const artW = panelW - 56;
+    const artH = 460;
+    rounded(artX, artY, artW, artH, 28, "#fff4d8", accent, 3);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(artX + 10, artY + 10, artW - 20, artH - 20);
+    ctx.clip();
+    if (art) drawHelpArt(art, artX + artW / 2, artY + artH / 2);
+    ctx.restore();
+
+    text(`${pageIndex + 1} / ${pageCount}`, 360, panelY + 710, 16, "#8b6b58");
+    drawButton(buttonId, buttonLabel, 180, panelY + 740, 360, 70, accent, onButton, true, true);
+  }
+
+  function showJuminStory(pageOrPages, options = {}) {
+    const pages = (Array.isArray(pageOrPages) ? pageOrPages : [pageOrPages]).map(page => ({
+      title: page.title,
+      body: page.body,
+      pose: page.pose != null ? page.pose : 0,
+      art: page.art || "welcome"
+    }));
+    const entry = {
+      pages,
+      accent: options.accent || "#55bd78",
+      onClose: options.onClose || null
+    };
+    if (modal) {
+      storyQueue.push(entry);
+      return;
+    }
+    modal = { type: "story", page: 0, pages: entry.pages, accent: entry.accent, onClose: entry.onClose };
+  }
+
+  function flushStoryQueue() {
+    if (modal || !storyQueue.length) return;
+    const next = storyQueue.shift();
+    modal = { type: "story", page: 0, pages: next.pages, accent: next.accent, onClose: next.onClose };
+  }
+
+  function closeStoryModal() {
+    const close = modal && modal.onClose;
+    modal = null;
+    if (close) close();
+    flushStoryQueue();
+  }
+
+  function missionProgress(mission) {
+    return Math.min(mission.goal, Math.max(0, mission.progress(save)|0));
+  }
+
+  function missionReady(mission) {
+    return !save.missionsClaimed[mission.id] && missionProgress(mission) >= mission.goal;
+  }
+
+  function claimableMissionCount() {
+    return DOCK_MISSIONS.filter(missionReady).length;
+  }
+
+  function rewardSummary(reward) {
+    const bits = [];
+    if (reward.coins) bits.push(`${formatNumber(reward.coins)} coins`);
+    if (reward.tools) bits.push(`${reward.tools} tools`);
+    if (reward.stars) bits.push(`${reward.stars} star${reward.stars > 1 ? "s" : ""}`);
+    if (reward.powerup) {
+      const entry = POWERUPS.find(item => item.id === reward.powerup);
+      bits.push(entry ? entry.name : reward.powerup);
+    }
+    return bits.join(" • ");
+  }
+
+  function claimDockMission(id) {
+    const mission = DOCK_MISSIONS.find(item => item.id === id);
+    if (!mission || !missionReady(mission)) return;
+    save.missionsClaimed[mission.id] = true;
+    const reward = mission.reward || {};
+    if (reward.coins) save.coins += reward.coins;
+    if (reward.tools) save.tools += reward.tools;
+    if (reward.stars) {
+      save.stars += reward.stars;
+      updateUnlocks(true);
+    }
+    if (reward.powerup) grantPowerup(reward.powerup, 1, false);
+    burst(360, 520, 36, "#3eb1d0", "star");
+    persist();
+    showJuminStory({
+      title: mission.name.toUpperCase(),
+      body: `Ferry cargo delivered! You earned ${rewardSummary(reward)}.`,
+      pose: mission.pose != null ? mission.pose : 2,
+      art: "reward"
+    }, { accent: "#3eb1d0" });
   }
 
   function spawnPowerupFx(type, x, y, extra = {}) {
@@ -1724,6 +1970,12 @@
       const pose = seagullPose();
       burst(pose.x, pose.y, 58, "#f6c744", "star");
       toast = { text: "SECRET FOUND! JAMAICAN BREEZE UNLOCKED", t: 4.5, color: "#169b62" };
+      showJuminStory({
+        title: "SECRET SEAGULL!",
+        body: "That bird dropped a style crate — Jamaican Breeze now dresses the whole island!",
+        pose: 2,
+        art: "island"
+      }, { accent: "#169b62" });
     } else {
       toast = { text: "Jamaican Breeze is active!", t: 4, color: "#169b62" };
     }
@@ -1821,6 +2073,15 @@
     ctx.restore();
     addButton("shop", 590, 24, 64, 78, () => { shopReturnScreen = "map"; screen = "shop"; });
 
+    const dockReady = claimableMissionCount();
+    ctx.save();
+    ctx.globalAlpha = pressedButton === "docks" ? .78 : 1;
+    rounded(520, 112, 176, 52, 26, "rgba(255,249,223,.96)", "#3eb1d0", 4);
+    text("DOCKS", 590, 132, 18, "#246a8b");
+    text(dockReady ? `${dockReady} READY` : "MISSIONS", 590, 152, 13, dockReady ? "#f47d63" : "#7e665a");
+    ctx.restore();
+    addButton("docks", 520, 112, 176, 52, () => { screen = "docks"; });
+
     const walkers = [...mapTourists].sort((a,b) => mapPath(a.path,a.t).y - mapPath(b.path,b.t).y);
     for (const person of walkers) {
       const pos = mapPath(person.path, person.t);
@@ -1911,6 +2172,12 @@
     if (save.ownedThemes[index]) {
       save.selectedTheme = index;
       toast = { text: theme.name + " is now on the island!", t: 4.5, color: theme.color };
+      showJuminStory({
+        title: "STYLE SWAP",
+        body: `${theme.name} is dressing Jum Jum Island now. ${theme.tagline}.`,
+        pose: 1,
+        art: "island"
+      }, { accent: theme.color });
       persist();
       return;
     }
@@ -1920,6 +2187,12 @@
     save.selectedTheme = index;
     burst(360, 660, 48, theme.color, "star");
     toast = { text: theme.name + " unlocked!", t: 4.5, color: theme.color };
+    showJuminStory({
+      title: "NEW ISLAND STYLE!",
+      body: `You bought ${theme.name}! ${theme.tagline}. Every venue just got a fresh look.`,
+      pose: 2,
+      art: "island"
+    }, { accent: theme.color });
     persist();
   }
 
@@ -2005,7 +2278,66 @@
     const site = mapSite(index);
     burst(site.x, site.y, 42, STATIONS[index].color, "star");
     toast = { text: `${STATIONS[index].name} reached level ${level+1}!`, t: 4.5, color: STATIONS[index].color };
+    const newLevel = level + 1;
+    showJuminStory({
+      title: newLevel >= 5 ? "LANDMARK READY!" : `LEVEL ${newLevel}!`,
+      body: newLevel >= 5
+        ? `${STATIONS[index].name} is now a Level 5 landmark. Guests will flock to this postcard view!`
+        : `Great build! ${STATIONS[index].name} climbed to Level ${newLevel}. Keep serving to unlock the next upgrade.`,
+      pose: newLevel >= 5 ? 2 : 1,
+      art: "upgrade"
+    }, { accent: STATIONS[index].color });
     persist();
+  }
+
+  function drawDocks() {
+    drawMapBackdrop();
+    ctx.fillStyle = "rgba(11,75,78,.28)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(18,78,76,.4)";
+    ctx.fillRect(0, 0, W, 150);
+    drawCircleButton("docksBack", 48, 58, 32, "‹", () => { screen = "map"; });
+    shadowText("DOCK MISSIONS", 360, 48, 28, "#fff8df");
+    text("Ferry jobs from the marina — claim cargo when goals are done", 360, 84, 15, "#fff1bf", "center", 800);
+    drawPill(0, save.coins, 120, 108, 160);
+    drawPill(2, save.tools, 300, 108, 150);
+    drawPill(1, save.stars, 470, 108, 150);
+
+    drawJuminPortrait(92, 230, 100, 1, "#3eb1d0");
+    rounded(160, 188, 500, 88, 26, "rgba(255,249,228,.96)", "#3eb1d0", 4);
+    wrapTextClipped("The docks send special island jobs. Finish them for coins, tools, and rare powerups.", 180, 210, 460, 22, 16, "#654a40", "left", 700, 3);
+
+    DOCK_MISSIONS.forEach((mission, index) => {
+      const y = 292 + index * 92;
+      const claimed = !!save.missionsClaimed[mission.id];
+      const current = missionProgress(mission);
+      const ready = missionReady(mission);
+      const ratio = clamp(current / mission.goal, 0, 1);
+      rounded(36, y, 648, 84, 22, "rgba(255,250,232,.97)", ready ? "#3eb1d0" : claimed ? "#b7b2a4" : "#8caf72", ready ? 5 : 3);
+      text(mission.name, 58, y + 24, 18, "#59392d", "left", 900, 300);
+      wrapTextClipped(mission.desc, 58, y + 44, 300, 16, 13, "#765d52", "left", 700, 1);
+      rounded(58, y + 64, 200, 8, 4, "#d7cdb4", null);
+      rounded(58, y + 64, 200 * ratio, 8, 4, ready ? "#3eb1d0" : STATIONS[3].color, null);
+      text(`${current}/${mission.goal}`, 270, y + 68, 12, "#6d554b", "left");
+      text(rewardSummary(mission.reward), 360, y + 24, 12, "#8b6b58", "left", 700, 140);
+      if (claimed) {
+        rounded(500, y + 36, 160, 36, 18, "#d9d4c6", "#a9a89d", 3);
+        text("CLAIMED", 580, y + 54, 15, "#6d554b");
+      } else {
+        drawButton(
+          "claim" + mission.id,
+          ready ? "CLAIM" : "WORKING",
+          500,
+          y + 32,
+          160,
+          40,
+          ready ? "#3eb1d0" : "#a9a89d",
+          () => claimDockMission(mission.id),
+          ready,
+          true
+        );
+      }
+    });
   }
 
   function randomTier(stationIndex = game ? game.station : selectedStation) {
@@ -2133,6 +2465,12 @@
     grantPowerup(id, 1, false);
     toast = { text: `${entry.name} packed for your shift!`, t: 3.4, color: entry.color };
     burst(360, 700, 28, entry.color, "star");
+    showJuminStory({
+      title: "POWERUP PACKED!",
+      body: `${entry.name} is ready for your next tough shift. ${entry.desc}`,
+      pose: 1,
+      art: "powerups"
+    }, { accent: entry.color });
     persist();
   }
 
@@ -2745,7 +3083,6 @@
     game.shiftCoins += bonus;
     addScore(2200+game.goal*250+game.maxCombo*180,360,420);
     save.bestShiftScores[game.station] = Math.max(save.bestShiftScores[game.station],game.score);
-    updateUnlocks();
     refreshAchievements(true);
     maybeGrantPowerup(0.85);
     modal = {
@@ -2760,6 +3097,7 @@
       highScore: save.highScore,
       newBest: game.newBest
     };
+    updateUnlocks(true);
     persist();
   }
 
@@ -3348,14 +3686,14 @@
         title: page.title,
         body: page.body,
         pose: page.pose,
-        accent: modal.type === "help" ? "#3eb1d0" : "#55bd78",
+        accent: modal.type === "help" ? "#3eb1d0" : (modal.accent || "#55bd78"),
         pageIndex,
         pageCount: pages.length,
         art: page.art,
         buttonId: modal.type === "help" ? "helpNext" : "storyok",
         buttonLabel: last ? (modal.type === "help" ? "GOT IT!" : "LET'S GO!") : "NEXT",
         onButton: () => {
-          if (last) modal = null;
+          if (last) closeStoryModal();
           else modal.page = pageIndex + 1;
         }
       });
@@ -3387,12 +3725,14 @@
       drawButton("continue", "KEEP SERVING", 102, 814, 244, 70, station.color, () => {
         const index = modal.station;
         modal = null;
+        flushStoryQueue();
         startStation(index);
       }, true, true);
       drawButton("island", "VISIT ISLAND", 374, 814, 244, 70, "#55bd78", () => {
         modal = null;
         game = null;
         screen = "map";
+        flushStoryQueue();
       }, true, true);
       text("Keep serving Jum Jum Island — Jumin packs more powerups as you go.", 360, 916, 15, "#80685b", "center", 700, 525);
     } else if (modal.type === "shiftFail") {
@@ -3407,12 +3747,14 @@
       drawButton("retryFail", "TRY AGAIN", 102, 740, 244, 70, station.color, () => {
         const index = modal.station;
         modal = null;
+        flushStoryQueue();
         startStation(index);
       }, true, true);
       drawButton("islandFail", "VISIT ISLAND", 374, 740, 244, 70, "#55bd78", () => {
         modal = null;
         game = null;
         screen = "map";
+        flushStoryQueue();
       }, true, true);
     } else if (modal.type === "resetConfirm") {
       rounded(70, 390, 580, 420, 38, "#fff9e7", "#f47d63", 7);
@@ -3426,7 +3768,7 @@
   function update(dt) {
     time += dt;
     updateEffects(dt);
-    if (screen === "map" || screen === "menu" || screen === "scores" || screen === "achievements") {
+    if (screen === "map" || screen === "menu" || screen === "scores" || screen === "achievements" || screen === "docks") {
       mapPulse += dt;
       for (const person of mapTourists) {
         person.t += person.speed*dt;
@@ -3445,6 +3787,7 @@
     else if (screen === "scores") drawScores();
     else if (screen === "achievements") drawAchievements();
     else if (screen === "map") drawMap();
+    else if (screen === "docks") drawDocks();
     else if (screen === "shop") drawShop();
     else if (screen === "play" && game) drawPlay();
     drawEffects();
