@@ -242,7 +242,8 @@
     { id: "score20k", name: "Resort Legend", desc: "Reach a best score of 20,000.", icon: 1, check: s => s.highScore >= 20000 },
     { id: "merges100", name: "Busy Hands", desc: "Complete 100 merges.", icon: 15, check: s => s.totalMerges >= 100 },
     { id: "secretBird", name: "Secret Seagull", desc: "Discover the Jamaican Breeze skin.", icon: 12, check: s => !!s.jamaicanUnlocked },
-    { id: "constellation", name: "Sky Mapper", desc: "Trigger a constellation boost.", icon: 14, check: s => !!s.constellationHits }
+    { id: "constellation", name: "Sky Mapper", desc: "Trigger a constellation boost.", icon: 14, check: s => !!s.constellationHits },
+    { id: "glassStarter", name: "Empty Hands", desc: "Launch 25 empty utensils into service.", icon: 0, check: s => (s.baseLaunches|0) >= 25 }
   ];
 
   const UPGRADE_COSTS = [
@@ -395,7 +396,8 @@
       tutorial: [false,false,false,false,false,false,false],
       lastStation: 0,
       achievements: {},
-      constellationHits: 0
+      constellationHits: 0,
+      baseLaunches: 0
     };
   }
 
@@ -426,6 +428,7 @@
       );
       merged.achievements = Object.assign({}, base.achievements, raw.achievements || {});
       merged.constellationHits = Math.max(0, merged.constellationHits|0);
+      merged.baseLaunches = Math.max(0, merged.baseLaunches|0);
       return merged;
     } catch (_) {
       return base;
@@ -1286,13 +1289,17 @@
     text("Slide. Match. Serve. Forever.", 360, 1188, 18, "#fff8df", "center", 700);
   }
 
+  function drawSubmenuHeader(title, backId) {
+    drawCircleButton(backId, 48, 58, 32, "‹", () => { screen = "menu"; });
+    shadowText(title, 360, 58, 28, "#fff8df");
+    drawCircleButton("sound", 668, 58, 30, save.muted ? "×" : "♪", toggleSound);
+  }
+
   function drawScores() {
     drawMapBackdrop(true);
     ctx.fillStyle = "rgba(8,60,68,.35)";
     ctx.fillRect(0,0,W,H);
-    drawMenuChrome();
-    drawCircleButton("scoresBack", 48, 58, 30, "‹", () => { screen = "menu"; });
-    shadowText("HIGH SCORES", 360, 58, 30, "#fff8df");
+    drawSubmenuHeader("HIGH SCORES", "scoresBack");
     rounded(48, 140, 624, 980, 36, "rgba(255,249,228,.97)", "#e6ad32", 6);
     drawMenuIcon(1, 360, 220, 110);
     text("BEST SHIFT SCORE", 360, 300, 18, "#8b6b58");
@@ -1313,9 +1320,7 @@
     drawMapBackdrop(true);
     ctx.fillStyle = "rgba(8,60,68,.35)";
     ctx.fillRect(0,0,W,H);
-    drawMenuChrome();
-    drawCircleButton("achBack", 48, 58, 30, "‹", () => { screen = "menu"; });
-    shadowText("ACHIEVEMENTS", 360, 58, 28, "#fff8df");
+    drawSubmenuHeader("ACHIEVEMENTS", "achBack");
     const unlockedCount = ACHIEVEMENTS.filter(entry => save.achievements[entry.id]).length;
     text(`${unlockedCount} / ${ACHIEVEMENTS.length} unlocked`, 360, 96, 16, "#fff4bf");
     rounded(36, 128, 648, 1008, 34, "rgba(255,249,228,.97)", "#3eb1d0", 5);
@@ -1325,7 +1330,7 @@
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = 58 + col * 310;
-      const y = 156 + row * 122;
+      const y = 152 + row * 120;
       rounded(x, y, 292, 108, 22, unlocked ? "#fff7df" : "#ebe4d4", unlocked ? "#3eb1d0" : "#b7b1a4", 3);
       ctx.save();
       ctx.globalAlpha = unlocked ? 1 : .45;
@@ -1870,6 +1875,10 @@
       spin: vx * .0015,
       entered: false
     }));
+    if (tier <= BASE_TIER) {
+      save.baseLaunches = (save.baseLaunches|0) + 1;
+      refreshAchievements(true);
+    }
     game.shots++;
     game.combo = 0;
     game.current = game.next;
