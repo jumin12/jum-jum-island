@@ -779,8 +779,11 @@
     ctx.restore();
   }
 
-  function drawPowerupIcon(index, x, y, size, alpha = 1) {
+  function drawPowerupIcon(index, x, y, size, alpha = 1, grey = false) {
+    ctx.save();
+    if (grey) ctx.filter = "grayscale(1) brightness(0.82)";
     drawSprite(images.powerups, 4, 1, index, 0, x - size / 2, y - size / 2, size, size, alpha);
+    ctx.restore();
   }
 
   function drawJumin(x, y, size = 120, pose = 0) {
@@ -1363,28 +1366,40 @@
     addButton("shop", 16, 22, 74, 82, () => { shopReturnScreen = "menu"; screen = "shop"; });
   }
 
+  function drawMenuIsland() {
+    for (let i = 0; i < STATIONS.length; i++) {
+      const p = mapSite(i);
+      const unlocked = save.unlocked[i];
+      drawMapBuilding(i, save.levels[i], p, unlocked ? 1 : 0.52);
+    }
+    drawSeagull(seagullPose());
+  }
+
   function drawMenu() {
     drawMapBackdrop(true);
-    ctx.fillStyle = "rgba(5,73,83,.22)";
-    ctx.fillRect(0,0,W,H);
+    drawMenuIsland();
+    const topFade = ctx.createLinearGradient(0, 0, 0, 340);
+    topFade.addColorStop(0, "rgba(8,70,80,.58)");
+    topFade.addColorStop(1, "rgba(8,70,80,0)");
+    ctx.fillStyle = topFade;
+    ctx.fillRect(0, 0, W, 340);
+    const bottomFade = ctx.createLinearGradient(0, 640, 0, H);
+    bottomFade.addColorStop(0, "rgba(8,70,80,0)");
+    bottomFade.addColorStop(1, "rgba(8,70,80,.52)");
+    ctx.fillStyle = bottomFade;
+    ctx.fillRect(0, 640, W, H - 640);
     drawMenuChrome();
-    const bob = Math.sin(time*1.8)*6;
+    const bob = Math.sin(time * 1.8) * 5;
     ctx.save();
-    ctx.translate(0,bob);
-    shadowText("JUM JUM", 360, 168, 58, "#fff7c8");
-    shadowText("ISLAND", 360, 238, 88, "#ffd24c");
-    rounded(170, 292, 380, 44, 22, "rgba(38,139,125,.94)", "#fff8df", 4);
-    text("FAMOUS FOR JUM JUM BERRIES", 360, 315, 18, "#fff8df");
+    ctx.translate(0, bob);
+    shadowText("JUM JUM", 360, 150, 56, "#fff7c8");
+    shadowText("ISLAND", 360, 216, 84, "#ffd24c");
+    rounded(170, 268, 380, 42, 21, "rgba(38,139,125,.94)", "#fff8df", 4);
+    text("FAMOUS FOR JUM JUM BERRIES", 360, 290, 17, "#fff8df");
     ctx.restore();
-    drawBuilding(0, 5, 360, 470+bob, 250);
-    drawJumin(230, 560+bob, 150, Math.floor(time * 0.7) % 2 === 0 ? 0 : 1);
-    drawPersonShadow(500, 602+bob, 76, .18);
-    drawAnimatedPerson(1, Math.floor(time*1.4+.7)%2, 500, 600+bob, 80, 134, 1, true);
-    rounded(168, 640+bob, 184, 34, 17, "rgba(255,249,223,.95)", "#f47d63", 3);
-    text("GUIDE JUMIN", 260, 658+bob, 15, "#71472e");
 
     const cards = [
-      { id: "play", label: "PLAY", color: "#f47d63", icon: 0, y: 700, action: () => {
+      { id: "play", label: "PLAY", color: "#f47d63", icon: 0, y: 760, action: () => {
         screen = "map";
         if (!save.welcomed) {
           save.welcomed = true;
@@ -1411,22 +1426,22 @@
           persist();
         }
       }},
-      { id: "scores", label: "HIGH SCORE", color: "#e6ad32", icon: 1, y: 820, action: () => { screen = "scores"; } },
-      { id: "achievements", label: "ACHIEVEMENTS", color: "#3eb1d0", icon: 2, y: 940, action: () => { screen = "achievements"; } }
+      { id: "scores", label: "HIGH SCORE", color: "#e6ad32", icon: 1, y: 870, action: () => { screen = "scores"; } },
+      { id: "achievements", label: "ACHIEVEMENTS", color: "#3eb1d0", icon: 2, y: 980, action: () => { screen = "achievements"; } }
     ];
     for (const card of cards) {
       const down = pressedButton === card.id;
       ctx.save();
       ctx.translate(0, down ? 3 : 0);
-      rounded(110, card.y, 500, 96, 32, "rgba(255,249,223,.97)", card.color, 5);
-      drawMenuIcon(card.icon, 188, card.y+48, 78);
-      text(card.label, 390, card.y+52, 34, "#59392d", "center", 900);
+      rounded(110, card.y, 500, 88, 30, "rgba(255,249,223,.96)", card.color, 5);
+      drawMenuIcon(card.icon, 188, card.y + 44, 70);
+      text(card.label, 390, card.y + 48, 32, "#59392d", "center", 900);
       ctx.restore();
-      addButton(card.id, 110, card.y, 500, 96, card.action, true);
+      addButton(card.id, 110, card.y, 500, 88, card.action, true);
     }
-    rounded(210, 1088, 300, 48, 24, "rgba(255,249,223,.94)", "#e6ad32", 3);
-    text(`BEST  ${formatNumber(save.highScore)}`, 360, 1113, 20, "#71472e");
-    text("Slide. Match. Serve. With Jumin.", 360, 1188, 18, "#fff8df", "center", 700);
+    rounded(210, 1098, 300, 44, 22, "rgba(255,249,223,.94)", "#e6ad32", 3);
+    text(`BEST  ${formatNumber(save.highScore)}`, 360, 1121, 19, "#71472e");
+    text("Slide. Match. Serve. Restore the island.", 360, 1194, 17, "#fff8df", "center", 700);
   }
 
   function drawSubmenuHeader(title, backId) {
@@ -1975,15 +1990,15 @@
     persist();
   }
 
-  function maybeGrantPowerup(chance = .14) {
-    if (deterministic.next() > chance) return;
+  function maybeGrantPowerup(chance = .2) {
+    if (Math.random() > chance) return;
     const weights = [
       ["skip", 3],
-      ["choose", 1],
-      ["magnet", 2],
-      ["thaw", game && game.pieces.some(p => p.frozen) ? 4 : 1]
+      ["choose", 1.4],
+      ["magnet", 2.2],
+      ["thaw", game && game.pieces.some(p => p.frozen) ? 4.5 : 1.2]
     ];
-    let roll = deterministic.next() * weights.reduce((sum, entry) => sum + entry[1], 0);
+    let roll = Math.random() * weights.reduce((sum, entry) => sum + entry[1], 0);
     for (const [id, weight] of weights) {
       roll -= weight;
       if (roll <= 0) {
@@ -2148,6 +2163,7 @@
     mergeBursts = [];
     powerupFx = [];
     screen = "play";
+    maybeGrantPowerup(0.4);
     persist();
   }
 
@@ -2315,8 +2331,9 @@
     addScore((newTier+1)*125*Math.max(1,game.combo),x,y-68);
     save.coins += bonus;
     game.shiftCoins += bonus;
-    if (game.combo === 3 || game.combo === 6) maybeGrantPowerup(0.55);
-    else if (game.combo > 1) maybeGrantPowerup(0.08);
+    if (game.combo === 3 || game.combo === 6) maybeGrantPowerup(0.72);
+    else if (game.combo > 1) maybeGrantPowerup(0.16);
+    else maybeGrantPowerup(0.05);
     if (game.station === 0 && game.combo >= 3) {
       const sun = 22 * game.combo;
       save.coins += sun;
@@ -2561,7 +2578,7 @@
     floatText(`ORDER +${reward}`, 470, 300, "#fff4ae", 28);
     game.shelf = [];
     game.serving = null;
-    maybeGrantPowerup(0.28);
+    maybeGrantPowerup(0.42);
     refreshAchievements(true);
     if (game.ordersThisShift >= game.goal) {
       finishShift();
@@ -2584,7 +2601,7 @@
     save.bestShiftScores[game.station] = Math.max(save.bestShiftScores[game.station],game.score);
     updateUnlocks();
     refreshAchievements(true);
-    maybeGrantPowerup(0.65);
+    maybeGrantPowerup(0.85);
     modal = {
       type: "shift",
       title: "SHIFT COMPLETE!",
@@ -2861,27 +2878,58 @@
   }
 
   function drawPowerupBar() {
-    const actions = [
-      { id: "skip", fn: useSkipPowerup },
-      { id: "choose", fn: useChoosePowerup },
-      { id: "magnet", fn: useMagnetPowerup },
-      { id: "thaw", fn: useThawPowerup }
+    const slots = [
+      { id: "skip", fn: useSkipPowerup, x: 54, y: 330 },
+      { id: "choose", fn: useChoosePowerup, x: 54, y: 440 },
+      { id: "magnet", fn: useMagnetPowerup, x: 666, y: 330 },
+      { id: "thaw", fn: useThawPowerup, x: 666, y: 440 }
     ];
-    for (let i = 0; i < actions.length; i++) {
-      const entry = POWERUPS[i];
-      const x = 48 + i * 168;
-      const y = 196;
+    for (const slot of slots) {
+      const entry = POWERUPS.find(item => item.id === slot.id);
       const count = powerupCount(entry.id);
+      const available = count > 0;
       const active = entry.id === "magnet" && (game.magnetCharges|0) > 0;
       const selecting = entry.id === "choose" && game.chooseMode;
-      rounded(x, y, 156, 58, 22, selecting || active ? "#fff1af" : "rgba(255,248,223,.94)", entry.color, selecting || active ? 5 : 3);
-      drawPowerupIcon(entry.icon, x + 30, y + 29, 44, count > 0 ? 1 : .35);
-      text(entry.name.split(" ")[0].toUpperCase(), x + 92, y + 22, 13, "#7b5b4e");
-      text(`×${count}`, x + 92, y + 42, 18, count > 0 ? "#59392d" : "#a9a29a");
-      addButton("powerup"+entry.id, x, y, 156, 58, actions[i].fn, !game.tutorial && !game.serving && !game.missionDone);
+      const pulse = available ? 0.55 + Math.sin(time * 4.5 + slot.y * 0.02) * 0.2 : 0;
+      ctx.save();
+      if (available || active || selecting) {
+        const glow = ctx.createRadialGradient(slot.x, slot.y, 6, slot.x, slot.y, 52);
+        const glowColor = selecting || active ? "#ffe08a" : entry.color;
+        glow.addColorStop(0, glowColor);
+        glow.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(slot.x, slot.y, 52, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = pressedButton === "powerup" + entry.id ? 0.78 : 1;
+      ctx.beginPath();
+      ctx.arc(slot.x, slot.y, 38, 0, TAU);
+      ctx.fillStyle = available || active || selecting ? "rgba(255,248,223,.96)" : "rgba(170,168,160,.72)";
+      ctx.fill();
+      ctx.lineWidth = active || selecting ? 5 : 3;
+      ctx.strokeStyle = available || active || selecting ? entry.color : "#8c8780";
+      ctx.stroke();
+      drawPowerupIcon(entry.icon, slot.x, slot.y, 58, available ? 1 : 0.55, !available);
+      const badgeR = 14;
+      const bx = slot.x + 22;
+      const by = slot.y + 22;
+      ctx.beginPath();
+      ctx.arc(bx, by, badgeR, 0, TAU);
+      ctx.fillStyle = available ? entry.color : "#9a9690";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#fff8df";
+      ctx.stroke();
+      text(String(count), bx, by + 1, 15, "#fff8df");
+      ctx.restore();
+      addButton("powerup" + entry.id, slot.x - 42, slot.y - 42, 84, 84, slot.fn, !game.tutorial && !game.serving && !game.missionDone);
     }
     if ((game.magnetCharges|0) > 0) {
-      text("MAGNET ARMED", 360, 270, 14, "#d45a9a");
+      text("MAGNET ARMED", 360, 288, 14, "#d45a9a");
     }
   }
 
