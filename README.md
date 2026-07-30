@@ -1,6 +1,6 @@
-# San Sarabel Island
+# Jum Jum Island
 
-**Sarabel Island** is a portrait mobile merge-and-serve resort game. Slide pieces, match them, fulfill guest orders, and restore every venue on the island.
+**Jum Jum Island** is a portrait mobile merge-and-serve resort game, famous for its jum jum berries. Guide **Jumin** walks you through sliding bottles, serving guests, thawing frozen pieces, and using tactical powerups.
 
 Play locally by opening `index.html`, or host the folder as a static site.
 
