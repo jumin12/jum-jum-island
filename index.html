@@ -941,7 +941,7 @@
       },
       {
         title: "DOCK MISSIONS",
-        body: "Open DOCKS on the island map for ferry missions. Finish goals to claim coins, tools, and powerups.",
+        body: "Tap MISSIONS on the docks at the bottom of the island. Finish goals to claim coins, tools, and powerups.",
         pose: 0,
         art: "missions"
       },
@@ -2073,15 +2073,6 @@
     ctx.restore();
     addButton("shop", 590, 24, 64, 78, () => { shopReturnScreen = "map"; screen = "shop"; });
 
-    const dockReady = claimableMissionCount();
-    ctx.save();
-    ctx.globalAlpha = pressedButton === "docks" ? .78 : 1;
-    rounded(520, 112, 176, 52, 26, "rgba(255,249,223,.96)", "#3eb1d0", 4);
-    text("DOCKS", 590, 132, 18, "#246a8b");
-    text(dockReady ? `${dockReady} READY` : "MISSIONS", 590, 152, 13, dockReady ? "#f47d63" : "#7e665a");
-    ctx.restore();
-    addButton("docks", 520, 112, 176, 52, () => { screen = "docks"; });
-
     const walkers = [...mapTourists].sort((a,b) => mapPath(a.path,a.t).y - mapPath(b.path,b.t).y);
     for (const person of walkers) {
       const pos = mapPath(person.path, person.t);
@@ -2127,7 +2118,34 @@
     drawSeagull(gull);
     addButton("secretSeagull", gull.x-40, gull.y-38, 80, 72, unlockJamaicanSkin);
 
+    drawDockMissionsPin();
     drawMapCard();
+  }
+
+  function drawDockMissionsPin() {
+    // Bottom pier / docks on the island map (above the venue card).
+    const x = 360;
+    const y = 918 + Math.sin(time * 2.2) * 3;
+    const ready = claimableMissionCount();
+    const pressed = pressedButton === "docks";
+    ctx.save();
+    ctx.globalAlpha = pressed ? 0.82 : 1;
+    ctx.fillStyle = "rgba(42,88,96,.28)";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 34, 78, 18, 0, 0, TAU);
+    ctx.fill();
+    rounded(x - 92, y - 28, 184, 58, 24, ready ? "#fff1af" : "rgba(255,249,223,.97)", "#3eb1d0", ready ? 5 : 4);
+    text("MISSIONS", x, y - 4, 22, "#246a8b");
+    text(ready ? `${ready} READY` : "DOCK BOARD", x, y + 18, 13, ready ? "#f47d63" : "#7e665a");
+    if (ready) {
+      ctx.beginPath();
+      ctx.arc(x + 78, y - 22, 12, 0, TAU);
+      ctx.fillStyle = "#f47d63";
+      ctx.fill();
+      text(String(ready), x + 78, y - 21, 13, "#fff8df");
+    }
+    ctx.restore();
+    addButton("docks", x - 96, y - 34, 192, 70, () => { screen = "docks"; });
   }
 
   function drawMapCard() {
@@ -2297,8 +2315,8 @@
     ctx.fillStyle = "rgba(18,78,76,.4)";
     ctx.fillRect(0, 0, W, 150);
     drawCircleButton("docksBack", 48, 58, 32, "‹", () => { screen = "map"; });
-    shadowText("DOCK MISSIONS", 360, 48, 28, "#fff8df");
-    text("Ferry jobs from the marina — claim cargo when goals are done", 360, 84, 15, "#fff1bf", "center", 800);
+    shadowText("MISSIONS", 360, 48, 28, "#fff8df");
+    text("Ferry jobs from the docks — claim cargo when goals are done", 360, 84, 15, "#fff1bf", "center", 800);
     drawPill(0, save.coins, 120, 108, 160);
     drawPill(2, save.tools, 300, 108, 150);
     drawPill(1, save.stars, 470, 108, 150);
